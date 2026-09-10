@@ -101,7 +101,7 @@
 |:--:|:--:|
 | ![区域市场](market/图表/区域市场图.png) | ![区域品类](market/图表/区域品类偏好图.png) |
 
-> 完整交互看板（3 页）见 [dashboard/olist.pdf](dashboard/olist.pdf)，Power BI 源文件见 [dashboard/成品.pbit](dashboard/成品.pbit)。
+> Power BI 看板源文件见 [logistics/看板源文件_PowerBI.pbit](logistics/看板源文件_PowerBI.pbit)（用 Power BI Desktop 打开，数据源重新指向 `data/raw/` 的 CSV 即可）。
 > 与 Python 结果互验的 SQL 查询见 [logistics/olist数据.sql](logistics/olist数据.sql)（口径说明 [logistics/sql代码说明.md](logistics/sql代码说明.md)）。
 
 ## 六、目录结构
@@ -118,6 +118,7 @@
 │   ├─ 报告_物流履约.md
 │   ├─ olist数据.sql             与 Python 结果互验的 SQL 查询
 │   ├─ sql代码说明.md
+│   ├─ 看板源文件_PowerBI.pbit   Power BI 看板源文件
 │   ├─ data/                     分线路统计、距离档、州内跨州
 │   └─ 图表/                     6 张分析图 + 4 张看板截图
 ├─ market/                       方向二：商品市场
@@ -126,7 +127,6 @@
 │   ├─ 报告_商品市场.md
 │   ├─ data/                     品类结构、价格带、区域画像、区域品类
 │   └─ 图表/                     4 张分析图
-└─ dashboard/                    Power BI 看板导出与源文件（PDF + pbit）
 ```
 
 ## 七、数据来源
@@ -150,7 +150,7 @@ python market/analysis.py
 python market/charts.py
 #    输出：market/data/ 4 张结果表 + market/图表/ 4 张图
 
-# 5. 看板：Power BI 导入上述 CSV，源文件见 dashboard/成品.pbit
+# 5. 看板：Power BI Desktop 打开 logistics/看板源文件_PowerBI.pbit（数据源指向 data/raw/ 的 CSV）
 ```
 
 > 仓库内 `logistics/data/`、`market/data/` 已含运行结果，不跑代码也可直接查看。
