@@ -56,7 +56,7 @@
 - `logistics/报告_物流履约.md` 分析报告全文
 - `logistics/方法与口径.md` 方法论、口径决策与校验记录
 - `logistics/data/` 37 条主要线路结果表、距离分档、州内跨州
-- `logistics/图表/` 6 张分析图
+- `logistics/图表/` 10 张图（6 张分析图 + 4 张 Power BI 看板截图）
 
 ## 四、方向二：商品市场（`market/`）
 
@@ -75,7 +75,7 @@
 
 ## 五、图表
 
-**分析图（`logistics/图表/`、`market/图表/`）**
+### 方向一：物流履约（`logistics/图表/`）
 
 | 延迟与差评 | 距离与延迟 |
 |:--:|:--:|
@@ -85,6 +85,14 @@
 |:--:|:--:|:--:|:--:|
 | ![03](logistics/图表/03_州内vs跨州_延迟率1.8倍.png) | ![04](logistics/图表/04_前置仓选址_超额延迟贡献Top8.png) | ![05](logistics/图表/05_随机森林_延迟是差评主驱动.png) | ![06](logistics/图表/06_承诺错配_现状vs需要承诺天数.png) |
 
+**Power BI 看板截图**（同属方向一，07-10）
+
+| 订单结构 | 超额延迟贡献 | 承诺校准效果 | 里约异常 |
+|:--:|:--:|:--:|:--:|
+| ![07](logistics/图表/07_看板_订单结构_跨州订单占64%.png) | ![08](logistics/图表/08_看板_超额延迟贡献_37条主要线路.png) | ![09](logistics/图表/09_看板_承诺校准前后_12条异常线路.png) | ![10](logistics/图表/10_看板_距离与延迟率_里约异常离群.png) |
+
+### 方向二：商品市场（`market/图表/`）
+
 | 品类定位 | 价格带结构 |
 |:--:|:--:|
 | ![品类定位](market/图表/品类定位图.png) | ![价格带](market/图表/价格带结构图.png) |
@@ -93,13 +101,8 @@
 |:--:|:--:|
 | ![区域市场](market/图表/区域市场图.png) | ![区域品类](market/图表/区域品类偏好图.png) |
 
-**Power BI 看板（`dashboard/`，交互看板截图）**
-
-| 订单结构 | 超额延迟贡献 | 承诺校准效果 | 里约异常 |
-|:--:|:--:|:--:|:--:|
-| ![看板01](dashboard/看板01_订单结构_跨州订单占64%.png) | ![看板02](dashboard/看板02_超额延迟贡献_37条主要线路.png) | ![看板03](dashboard/看板03_承诺校准前后_12条异常线路.png) | ![看板04](dashboard/看板04_距离与延迟率_里约异常离群.png) |
-
-> 完整交互看板见 [dashboard/olist.pdf](dashboard/olist.pdf)（Power BI 导出），源文件 [dashboard/成品.pbit](dashboard/成品.pbit)。
+> 完整交互看板（3 页）见 [dashboard/olist.pdf](dashboard/olist.pdf)，Power BI 源文件见 [dashboard/成品.pbit](dashboard/成品.pbit)。
+> 与 Python 结果互验的 SQL 查询见 [dashboard/olist数据.sql](dashboard/olist数据.sql)。
 
 ## 六、目录结构
 
@@ -114,14 +117,14 @@
 │   ├─ 报告_物流履约.md
 │   ├─ 方法与口径.md
 │   ├─ data/                     分线路统计、距离档、州内跨州
-│   └─ 图表/                     6 张分析图
+│   └─ 图表/                     6 张分析图 + 4 张看板截图
 ├─ market/                       方向二：商品市场
 │   ├─ analysis.py               数据层（底座 + 三模块聚合）
 │   ├─ charts.py                 展现层（4 张图）
 │   ├─ 报告_商品市场.md
 │   ├─ data/                     品类结构、价格带、区域画像、区域品类
 │   └─ 图表/                     4 张分析图
-└─ dashboard/                    Power BI 看板（PDF + pbit + SQL + 截图）
+└─ dashboard/                    Power BI 看板全文与源文件（PDF + pbit + SQL 验证）
 ```
 
 ## 七、数据来源
