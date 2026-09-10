@@ -1,0 +1,5 @@
+data/raw/
+market/data/商品主表.csv
+__pycache__/
+*.pyc
+.DS_Store
