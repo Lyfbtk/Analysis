@@ -102,6 +102,7 @@
 | ![区域市场](market/图表/区域市场图.png) | ![区域品类](market/图表/区域品类偏好图.png) |
 
 > 看板用 Power BI Desktop 制作，页面截图见上方 07-10；与 Python 结果互验的 SQL 查询见 [logistics/olist数据.sql](logistics/olist数据.sql)（口径说明 [logistics/sql代码说明.md](logistics/sql代码说明.md)）。
+> `logistics/图表/` 的图为分析结果导出（Python 制图 + Power BI 看板），生成脚本不在仓库；`market/图表/` 的 4 张图由 [market/charts.py](market/charts.py) 生成，可重跑复现。
 
 ## 六、目录结构
 
