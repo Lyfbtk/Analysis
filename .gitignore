@@ -1,4 +1,5 @@
-data/raw/
+data/raw/*
+!data/raw/README.md
 market/data/商品主表.csv
 __pycache__/
 *.pyc
