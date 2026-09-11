@@ -116,7 +116,7 @@
 |:--:|:--:|
 | ![品类履约联合_散点图](market/图表/品类履约联合_散点图.png) | ![品类履约联合_分解图](market/图表/品类履约联合_分解图.png) |
 
-**交互版**：[market/品类履约联合_交互看板.html](market/品类履约联合_交互看板.html)——单文件、零依赖，下载后双击即开（悬停看数值、点品类高亮、表头排序、销量门槛与搜索过滤）。GitHub 不直接渲染 HTML：想看页面效果可开仓库 Pages，或用 raw.githack 链接。
+**交互版**：[market/品类履约联合_交互看板.html](market/品类履约联合_交互看板.html)——单文件、零依赖，下载后双击即开（悬停看数值、点品类高亮、表头排序、销量门槛与搜索过滤）。**已开 GitHub Pages，在线直接打开**：[交互看板](https://lyfbtk.github.io/Analysis/market/品类履约联合_交互看板.html)｜[本 README 的网页版](https://lyfbtk.github.io/Analysis/)。
 
 **Power BI 交互版**（源文件 `123.pbix` 第 7 页"品类×履约"，数据源为同一份结果表）：切片器筛选品类 → 散点、堆积条、表格三处联动。
 
