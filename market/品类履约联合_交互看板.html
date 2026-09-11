@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>品类 × 履约联合：差评里有多少来自配送</title>
+<style>
+  :root{--navy:#1F4E79;--orange:#E67E22;--sky:#5DADE2;--gray:#7F8C8D;--lgray:#BDC3C7;}
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 20px 40px;background:#FBFCFC;color:#222;
+       font-family:"Microsoft YaHei","PingFang SC","Helvetica Neue",Arial,sans-serif}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:24px;color:var(--navy);margin:0 0 6px}
+  .sub{color:var(--gray);font-size:13px;margin:0 0 18px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+  .kpi{background:#fff;border:1px solid #E5EAEA;border-radius:10px;padding:12px 14px}
+  .kpi b{display:block;font-size:13px;color:var(--gray);font-weight:400;margin-bottom:6px}
+  .kpi span{font-size:24px;font-weight:700;color:var(--navy)}
+  .kpi i{display:block;font-style:normal;font-size:12px;color:var(--lgray);margin-top:4px}
+  .controls{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin:0 0 16px;font-size:13px;color:var(--gray)}
+  select,input{font:inherit;padding:5px 8px;border:1px solid #D5DBDB;border-radius:6px;background:#fff;color:#222}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .card{background:#fff;border:1px solid #E5EAEA;border-radius:10px;padding:14px 16px 10px;margin-bottom:16px}
+  .card h2{font-size:15px;color:var(--navy);margin:0 0 10px}
+  svg{width:100%;height:auto;display:block}
+  .tip{position:fixed;pointer-events:none;background:rgba(31,78,121,.95);color:#fff;font-size:12.5px;
+       line-height:1.55;padding:8px 10px;border-radius:8px;display:none;z-index:9;white-space:nowrap}
+  .dim{opacity:.18}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:6px 8px;text-align:right;border-bottom:1px solid #EEF2F2;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--gray);font-weight:600;cursor:pointer;user-select:none}
+  th.sorted{color:var(--navy)}
+  tr.hi{background:#FDF3E7}
+  tbody tr:hover{background:#F6F9F9}
+  .foot{color:var(--lgray);font-size:12px;margin-top:10px}
+</style></head><body><div class="wrap">
+<h1>品类 × 履约联合：差评里有多少来自配送</h1>
+<p class="sub">Olist 巴西电商 · 方向二延伸 · 延迟标记复用方向一口径（订单级延迟率 6.66%，件数加权 <b id="pdl"></b>%）
+ · 全表 74 个品类 / 109,362 件 · 数据源 market/data/品类履约联合.csv，生成脚本 market/charts.py</p>
+
+<div class="kpis">
+  <div class="kpi"><b>平台差评率</b><span id="k1"></span><i>延迟件 6.48% × 62.88% + 准时件 93.52% × 11.40%</i></div>
+  <div class="kpi"><b>延迟贡献</b><span>3.33pp</span><i>占全部差评的 22.6%（剔除里约后 20.2%）</i></div>
+  <div class="kpi"><b>品类层物流杠杆</b><span>12.6%~32.4%</span><i>办公家具（自身问题）→ 文具（履约可拿回）</i></div>
+  <div class="kpi"><b>最大绝对贡献</b><span>377 件</span><i>床品家纺因延迟多出的差评件数</i></div>
+</div>
+
+<div class="controls">
+  <label>销量门槛
+    <select id="minvol">
+      <option value="0">全部品类</option>
+      <option value="1000" selected>≥ 1,000 件</option>
+      <option value="3000">≥ 3,000 件</option>
+      <option value="5000">≥ 5,000 件</option>
+    </select>
+  </label>
+  <label>搜索品类 <input id="q" placeholder="如：床品 / cam"></label>
+  <span>悬停看数值 · 点击品类高亮 · 点表头排序 · 已排除"未分类"</span>
+</div>
+
+<div class="grid">
+  <div class="card"><h2>延迟率 × 差评率（气泡 = 销量）</h2><svg id="scatter" viewBox="0 0 660 440"></svg></div>
+  <div class="card"><h2>销量 Top12 品类：差评率拆解（按差评率排序）</h2><svg id="bar" viewBox="0 0 660 440"></svg></div>
+</div>
+
+<div class="card"><h2>全量结果表（点击表头排序）</h2>
+<p class="foot" style="margin:0 0 8px">列怎么读（件口径）：差评率 = 差评件 ÷ 件数；延迟率 = 件落在延迟订单里的占比；
+延迟组/准时组差评率 = 这两批件各自的差评占比；延迟贡献 = 延迟率 ×（延迟组差评率 − 准时组差评率），
+即"因延迟多出来的差评"折算到全部件上的百分点；延迟贡献占比 = 延迟贡献 ÷ 差评率。</p>
+<div id="tablebox"></div>
+<p class="foot">图表由 market/charts.py 生成；口径见 方法与口径.md 3.7。数据为件数加权，差异说明见文档。</p></div>
+
+<div class="tip" id="tip"></div>
+</div>
+<script>
+const DATA = [{"cat": "cama_mesa_banho", "cn": "床品家纺", "vol": 10831, "rate": 18.08, "delay": 6.89, "pd": 65.15, "po": 14.6, "contrib": 3.48, "share": 19.3, "excess": 377.0}, {"cat": "beleza_saude", "cn": "美妆健康", "vol": 9402, "rate": 12.45, "delay": 7.38, "pd": 62.68, "po": 8.45, "contrib": 4.0, "share": 32.1, "excess": 376.0}, {"cat": "esporte_lazer", "cn": "运动休闲", "vol": 8377, "rate": 13.02, "delay": 6.24, "pd": 64.63, "po": 9.59, "contrib": 3.44, "share": 26.4, "excess": 288.0}, {"cat": "moveis_decoracao", "cn": "家具装饰", "vol": 8080, "rate": 17.97, "delay": 6.92, "pd": 60.11, "po": 14.84, "contrib": 3.13, "share": 17.4, "excess": 253.0}, {"cat": "informatica_acessorios", "cn": "电脑配件", "vol": 7607, "rate": 16.98, "delay": 6.36, "pd": 61.16, "po": 13.98, "contrib": 3.0, "share": 17.7, "excess": 228.0}, {"cat": "utilidades_domesticas", "cn": "日用", "vol": 6756, "rate": 14.18, "delay": 4.9, "pd": 62.24, "po": 11.7, "contrib": 2.48, "share": 17.5, "excess": 167.0}, {"cat": "relogios_presentes", "cn": "钟表礼品", "vol": 5813, "rate": 14.81, "delay": 7.07, "pd": 63.5, "po": 11.11, "contrib": 3.7, "share": 25.0, "excess": 215.0}, {"cat": "telefonia", "cn": "手机通讯", "vol": 4404, "rate": 15.53, "delay": 6.9, "pd": 57.89, "po": 12.39, "contrib": 3.14, "share": 20.2, "excess": 138.0}, {"cat": "ferramentas_jardim", "cn": "工具园艺", "vol": 4240, "rate": 14.93, "delay": 6.46, "pd": 63.87, "po": 11.55, "contrib": 3.38, "share": 22.6, "excess": 143.0}, {"cat": "automotivo", "cn": "汽车用品", "vol": 4098, "rate": 13.84, "delay": 6.98, "pd": 59.79, "po": 10.39, "contrib": 3.45, "share": 24.9, "excess": 141.0}, {"cat": "brinquedos", "cn": "玩具", "vol": 3998, "rate": 12.16, "delay": 6.13, "pd": 67.35, "po": 8.55, "contrib": 3.6, "share": 29.6, "excess": 144.0}, {"cat": "cool_stuff", "cn": "酷玩", "vol": 3689, "rate": 11.85, "delay": 5.75, "pd": 63.21, "po": 8.71, "contrib": 3.13, "share": 26.4, "excess": 116.0}, {"cat": "perfumaria", "cn": "香氛", "vol": 3329, "rate": 13.07, "delay": 6.46, "pd": 65.12, "po": 9.47, "contrib": 3.59, "share": 27.5, "excess": 120.0}, {"cat": "bebes", "cn": "婴童", "vol": 2959, "rate": 14.94, "delay": 7.54, "pd": 67.26, "po": 10.67, "contrib": 4.26, "share": 28.6, "excess": 126.0}, {"cat": "eletronicos", "cn": "电子", "vol": 2710, "rate": 14.83, "delay": 7.56, "pd": 61.46, "po": 11.02, "contrib": 3.82, "share": 25.7, "excess": 103.0}, {"cat": "papelaria", "cn": "文具", "vol": 2451, "rate": 11.59, "delay": 6.73, "pd": 63.64, "po": 7.83, "contrib": 3.76, "share": 32.4, "excess": 92.0}, {"cat": "fashion_bolsas_e_acessorios", "cn": "箱包配件", "vol": 1975, "rate": 11.34, "delay": 5.27, "pd": 63.46, "po": 8.44, "contrib": 2.9, "share": 25.5, "excess": 57.0}, {"cat": "pet_shop", "cn": "宠物用品", "vol": 1915, "rate": 12.06, "delay": 4.86, "pd": 59.14, "po": 9.66, "contrib": 2.4, "share": 19.9, "excess": 46.0}, {"cat": "moveis_escritorio", "cn": "办公家具", "vol": 1654, "rate": 25.45, "delay": 7.92, "pd": 62.6, "po": 22.26, "contrib": 3.19, "share": 12.6, "excess": 53.0}, {"cat": "未分类", "cn": "未分类", "vol": 1525, "rate": 19.41, "delay": 7.48, "pd": 70.18, "po": 15.31, "contrib": 4.1, "share": 21.1, "excess": 63.0}, {"cat": "consoles_games", "cn": "游戏机", "vol": 1079, "rate": 12.14, "delay": 5.56, "pd": 61.67, "po": 9.22, "contrib": 2.92, "share": 24.0, "excess": 31.0}, {"cat": "malas_acessorios", "cn": "行李箱", "vol": 1073, "rate": 8.67, "delay": 4.1, "pd": 61.36, "po": 6.41, "contrib": 2.25, "share": 26.0, "excess": 24.0}, {"cat": "construcao_ferramentas_construcao", "cn": "construcao_ferramentas_construcao", "vol": 911, "rate": 14.05, "delay": 6.15, "pd": 67.86, "po": 10.53, "contrib": 3.52, "share": 25.1, "excess": 32.0}, {"cat": "eletrodomesticos", "cn": "eletrodomesticos", "vol": 751, "rate": 10.65, "delay": 4.53, "pd": 58.82, "po": 8.37, "contrib": 2.28, "share": 21.4, "excess": 17.0}, {"cat": "eletroportateis", "cn": "eletroportateis", "vol": 653, "rate": 12.25, "delay": 4.44, "pd": 44.83, "po": 10.74, "contrib": 1.51, "share": 12.4, "excess": 10.0}, {"cat": "instrumentos_musicais", "cn": "instrumentos_musicais", "vol": 645, "rate": 11.94, "delay": 7.44, "pd": 70.83, "po": 7.2, "contrib": 4.74, "share": 39.7, "excess": 31.0}, {"cat": "casa_construcao", "cn": "casa_construcao", "vol": 592, "rate": 17.4, "delay": 5.91, "pd": 60.0, "po": 14.72, "contrib": 2.68, "share": 15.4, "excess": 16.0}, {"cat": "livros_interesse_geral", "cn": "livros_interesse_geral", "vol": 532, "rate": 6.77, "delay": 6.02, "pd": 43.75, "po": 4.4, "contrib": 2.37, "share": 35.0, "excess": 13.0}, {"cat": "moveis_sala", "cn": "moveis_sala", "vol": 490, "rate": 17.14, "delay": 6.73, "pd": 66.67, "po": 13.57, "contrib": 3.58, "share": 20.9, "excess": 18.0}, {"cat": "alimentos", "cn": "alimentos", "vol": 487, "rate": 11.7, "delay": 6.98, "pd": 64.71, "po": 7.73, "contrib": 3.98, "share": 34.0, "excess": 19.0}, {"cat": "casa_conforto", "cn": "casa_conforto", "vol": 427, "rate": 19.67, "delay": 9.37, "pd": 55.0, "po": 16.02, "contrib": 3.65, "share": 18.6, "excess": 16.0}, {"cat": "bebidas", "cn": "bebidas", "vol": 361, "rate": 12.47, "delay": 4.43, "pd": 68.75, "po": 9.86, "contrib": 2.61, "share": 20.9, "excess": 9.0}, {"cat": "audio", "cn": "audio", "vol": 358, "rate": 21.51, "delay": 11.45, "pd": 78.05, "po": 14.2, "contrib": 7.31, "share": 34.0, "excess": 26.0}, {"cat": "market_place", "cn": "market_place", "vol": 303, "rate": 12.87, "delay": 3.63, "pd": 45.45, "po": 11.64, "contrib": 1.23, "share": 9.5, "excess": 4.0}, {"cat": "construcao_ferramentas_iluminacao", "cn": "construcao_ferramentas_iluminacao", "vol": 292, "rate": 13.7, "delay": 7.53, "pd": 40.91, "po": 11.48, "contrib": 2.22, "share": 16.2, "excess": 6.0}, {"cat": "climatizacao", "cn": "climatizacao", "vol": 284, "rate": 15.49, "delay": 3.52, "pd": 70.0, "po": 13.5, "contrib": 1.99, "share": 12.8, "excess": 6.0}, {"cat": "moveis_cozinha_area_de_servico_jantar_e_jardim", "cn": "moveis_cozinha_area_de_servico_jantar_e_jardim", "vol": 272, "rate": 13.6, "delay": 4.41, "pd": 58.33, "po": 11.54, "contrib": 2.06, "share": 15.2, "excess": 6.0}, {"cat": "alimentos_bebidas", "cn": "alimentos_bebidas", "vol": 269, "rate": 6.69, "delay": 4.09, "pd": 63.64, "po": 4.26, "contrib": 2.43, "share": 36.3, "excess": 7.0}, {"cat": "livros_tecnicos", "cn": "livros_tecnicos", "vol": 262, "rate": 10.31, "delay": 8.02, "pd": 33.33, "po": 8.3, "contrib": 2.01, "share": 19.5, "excess": 5.0}, {"cat": "industria_comercio_e_negocios", "cn": "industria_comercio_e_negocios", "vol": 261, "rate": 13.03, "delay": 5.75, "pd": 40.0, "po": 11.38, "contrib": 1.64, "share": 12.6, "excess": 4.0}, {"cat": "fashion_calcados", "cn": "fashion_calcados", "vol": 253, "rate": 10.67, "delay": 3.95, "pd": 80.0, "po": 7.82, "contrib": 2.85, "share": 26.7, "excess": 7.0}, {"cat": "telefonia_fixa", "cn": "telefonia_fixa", "vol": 252, "rate": 23.02, "delay": 3.57, "pd": 77.78, "po": 20.99, "contrib": 2.03, "share": 8.8, "excess": 5.0}, {"cat": "construcao_ferramentas_jardim", "cn": "construcao_ferramentas_jardim", "vol": 232, "rate": 15.52, "delay": 5.6, "pd": 38.46, "po": 14.16, "contrib": 1.36, "share": 8.8, "excess": 3.0}, {"cat": "eletrodomesticos_2", "cn": "eletrodomesticos_2", "vol": 230, "rate": 12.17, "delay": 6.09, "pd": 78.57, "po": 7.87, "contrib": 4.3, "share": 35.4, "excess": 10.0}, {"cat": "agro_industria_e_comercio", "cn": "agro_industria_e_comercio", "vol": 206, "rate": 13.59, "delay": 3.4, "pd": 85.71, "po": 11.06, "contrib": 2.54, "share": 18.7, "excess": 5.0}, {"cat": "pcs", "cn": "pcs", "vol": 196, "rate": 11.73, "delay": 4.08, "pd": 75.0, "po": 9.04, "contrib": 2.69, "share": 22.9, "excess": 5.0}, {"cat": "sinalizacao_e_seguranca", "cn": "sinalizacao_e_seguranca", "vol": 196, "rate": 11.73, "delay": 3.57, "pd": 57.14, "po": 10.05, "contrib": 1.68, "share": 14.3, "excess": 3.0}, {"cat": "artes", "cn": "artes", "vol": 195, "rate": 14.36, "delay": 6.15, "pd": 58.33, "po": 11.48, "contrib": 2.88, "share": 20.1, "excess": 6.0}, {"cat": "construcao_ferramentas_seguranca", "cn": "construcao_ferramentas_seguranca", "vol": 182, "rate": 17.58, "delay": 2.75, "pd": 100.0, "po": 15.25, "contrib": 2.33, "share": 13.2, "excess": 4.0}, {"cat": "artigos_de_natal", "cn": "artigos_de_natal", "vol": 143, "rate": 13.29, "delay": 6.29, "pd": 44.44, "po": 11.19, "contrib": 2.09, "share": 15.8, "excess": 3.0}, {"cat": "fashion_underwear_e_moda_praia", "cn": "fashion_underwear_e_moda_praia", "vol": 126, "rate": 15.87, "delay": 9.52, "pd": 83.33, "po": 8.77, "contrib": 7.1, "share": 44.7, "excess": 9.0}, {"cat": "fashion_roupa_masculina", "cn": "fashion_roupa_masculina", "vol": 124, "rate": 25.0, "delay": 4.84, "pd": 83.33, "po": 22.03, "contrib": 2.97, "share": 11.9, "excess": 4.0}, {"cat": "moveis_quarto", "cn": "moveis_quarto", "vol": 103, "rate": 12.62, "delay": 6.8, "pd": 85.71, "po": 7.29, "contrib": 5.33, "share": 42.2, "excess": 5.0}, {"cat": "construcao_ferramentas_ferramentas", "cn": "construcao_ferramentas_ferramentas", "vol": 99, "rate": 8.08, "delay": 5.05, "pd": 40.0, "po": 6.38, "contrib": 1.7, "share": 21.0, "excess": 2.0}, {"cat": "tablets_impressao_imagem", "cn": "tablets_impressao_imagem", "vol": 81, "rate": 13.58, "delay": 4.94, "pd": 75.0, "po": 10.39, "contrib": 3.19, "share": 23.5, "excess": 3.0}, {"cat": "portateis_casa_forno_e_cafe", "cn": "portateis_casa_forno_e_cafe", "vol": 73, "rate": 6.85, "delay": 5.48, "pd": 50.0, "po": 4.35, "contrib": 2.5, "share": 36.5, "excess": 2.0}, {"cat": "cine_foto", "cn": "cine_foto", "vol": 70, "rate": 12.86, "delay": 5.71, "pd": 50.0, "po": 10.61, "contrib": 2.25, "share": 17.5, "excess": 2.0}, {"cat": "dvds_blu_ray", "cn": "dvds_blu_ray", "vol": 61, "rate": 14.75, "delay": 6.56, "pd": 100.0, "po": 8.77, "contrib": 5.98, "share": 40.5, "excess": 4.0}, {"cat": "livros_importados", "cn": "livros_importados", "vol": 57, "rate": 8.77, "delay": 3.51, "pd": 100.0, "po": 5.45, "contrib": 3.32, "share": 37.8, "excess": 2.0}, {"cat": "fashion_roupa_feminina", "cn": "fashion_roupa_feminina", "vol": 45, "rate": 13.33, "delay": 6.67, "pd": 33.33, "po": 11.9, "contrib": 1.43, "share": 10.7, "excess": 1.0}, {"cat": "artigos_de_festas", "cn": "artigos_de_festas", "vol": 42, "rate": 21.43, "delay": 0.0, "pd": null, "po": 21.43, "contrib": null, "share": null, "excess": null}, {"cat": "musica", "cn": "musica", "vol": 38, "rate": 10.53, "delay": 5.26, "pd": 100.0, "po": 5.56, "contrib": 4.97, "share": 47.2, "excess": 2.0}, {"cat": "moveis_colchao_e_estofado", "cn": "moveis_colchao_e_estofado", "vol": 37, "rate": 18.92, "delay": 13.51, "pd": 60.0, "po": 12.5, "contrib": 6.42, "share": 33.9, "excess": 2.0}, {"cat": "fraldas_higiene", "cn": "fraldas_higiene", "vol": 37, "rate": 21.62, "delay": 0.0, "pd": null, "po": 21.62, "contrib": null, "share": null, "excess": null}, {"cat": "flores", "cn": "flores", "vol": 31, "rate": 6.45, "delay": 3.23, "pd": 100.0, "po": 3.33, "contrib": 3.12, "share": 48.3, "excess": 1.0}, {"cat": "fashion_esporte", "cn": "fashion_esporte", "vol": 29, "rate": 6.9, "delay": 3.45, "pd": 0.0, "po": 7.14, "contrib": -0.25, "share": -3.6, "excess": -0.0}, {"cat": "casa_conforto_2", "cn": "casa_conforto_2", "vol": 27, "rate": 25.93, "delay": 14.81, "pd": 75.0, "po": 17.39, "contrib": 8.53, "share": 32.9, "excess": 2.0}, {"cat": "artes_e_artesanato", "cn": "artes_e_artesanato", "vol": 24, "rate": 12.5, "delay": 4.17, "pd": 100.0, "po": 8.7, "contrib": 3.8, "share": 30.4, "excess": 1.0}, {"cat": "portateis_cozinha_e_preparadores_de_alimentos", "cn": "portateis_cozinha_e_preparadores_de_alimentos", "vol": 14, "rate": 28.57, "delay": 7.14, "pd": 0.0, "po": 30.77, "contrib": -2.2, "share": -7.7, "excess": -0.0}, {"cat": "cds_dvds_musicais", "cn": "cds_dvds_musicais", "vol": 14, "rate": 0.0, "delay": 0.0, "pd": null, "po": 0.0, "contrib": null, "share": null, "excess": null}, {"cat": "la_cuisine", "cn": "la_cuisine", "vol": 13, "rate": 23.08, "delay": 0.0, "pd": null, "po": 23.08, "contrib": null, "share": null, "excess": null}, {"cat": "pc_gamer", "cn": "pc_gamer", "vol": 8, "rate": 25.0, "delay": 0.0, "pd": null, "po": 25.0, "contrib": null, "share": null, "excess": null}, {"cat": "fashion_roupa_infanto_juvenil", "cn": "fashion_roupa_infanto_juvenil", "vol": 7, "rate": 0.0, "delay": 0.0, "pd": null, "po": 0.0, "contrib": null, "share": null, "excess": null}, {"cat": "seguros_e_servicos", "cn": "seguros_e_servicos", "vol": 2, "rate": 50.0, "delay": 0.0, "pd": null, "po": 50.0, "contrib": null, "share": null, "excess": null}];
+const PD = +"6.48", PR = +"14.73";
+const NAVY="#1F4E79", ORANGE="#E67E22", SKY="#5DADE2", GRAY="#7F8C8D", LGRAY="#BDC3C7";
+const SVGNS = "http://www.w3.org/2000/svg";
+let minVol = 1000, q = "", sel = null, sortKey = "vol", sortAsc = false;
+const tip = document.getElementById("tip");
+document.getElementById("k1").textContent = PR.toFixed(2) + "%";
+document.getElementById("pdl").textContent = PD.toFixed(2);
+
+const base = DATA.filter(d => d.cat !== "未分类");
+const shown = () => base.filter(d => d.vol >= minVol && (q === "" || d.cn.includes(q) || d.cat.toLowerCase().includes(q.toLowerCase())));
+const el = (t, a, txt) => { const n = document.createElementNS(SVGNS, t); for (const k in a) n.setAttribute(k, a[k]); if (txt != null) n.textContent = txt; return n; };
+const fmt = (v, n) => (v == null ? "—" : Number(v).toFixed(n));
+function showTip(e, html){ tip.innerHTML = html; tip.style.display = "block";
+  const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 10);
+  tip.style.left = x + "px"; tip.style.top = (e.clientY + 14) + "px"; }
+function hideTip(){ tip.style.display = "none"; }
+function pickCat(c){ sel = (sel === c) ? null : c; draw(); }
+
+function axes(svg, M, xd, yd, xlab, ylab, xticks, yticks){
+  const {l, r, t, b} = M, W = 660, H = 440;
+  const sx = v => l + (v - xd[0]) / (xd[1] - xd[0]) * (W - l - r);
+  const sy = v => H - b - (v - yd[0]) / (yd[1] - yd[0]) * (H - t - b);
+  yticks.forEach(v => { svg.appendChild(el("line", {x1:l, x2:W-r, y1:sy(v), y2:sy(v), stroke:"#EFF3F3"}));
+    svg.appendChild(el("text", {x:l-8, y:sy(v)+4, fill:GRAY, "font-size":11, "text-anchor":"end"}, v)); });
+  xticks.forEach(v => { svg.appendChild(el("line", {x1:sx(v), x2:sx(v), y1:t, y2:H-b, stroke:"#EFF3F3"}));
+    svg.appendChild(el("text", {x:sx(v), y:H-b+18, fill:GRAY, "font-size":11, "text-anchor":"middle"}, v)); });
+  svg.appendChild(el("line", {x1:l, x2:W-r, y1:H-b, y2:H-b, stroke:LGRAY}));
+  svg.appendChild(el("line", {x1:l, x2:l, y1:t, y2:H-b, stroke:LGRAY}));
+  svg.appendChild(el("text", {x:(l+W-r)/2, y:H-8, fill:GRAY, "font-size":12, "text-anchor":"middle"}, xlab));
+  svg.appendChild(el("text", {x:14, y:(t+H-b)/2, fill:GRAY, "font-size":12, "text-anchor":"middle",
+    transform:`rotate(-90 14 ${(t+H-b)/2})`}, ylab));
+  return {sx, sy};
+}
+
+function draw(){
+  const pts = shown();
+  const svg = document.getElementById("scatter"); svg.innerHTML = "";
+  const M = {l:54, r:18, t:18, b:44};
+  const x0 = 3.8, x1 = 8.3, y0 = 5, y1 = 27;
+  const g = axes(svg, M, [x0,x1], [y0,y1], "延迟率（%）", "差评率（%）",
+                 [4,5,6,7,8], [5,10,15,20,25]);
+  svg.appendChild(el("line", {x1:g.sx(PD), x2:g.sx(PD), y1:M.t, y2:440-M.b, stroke:LGRAY, "stroke-dasharray":"5 4"}));
+  svg.appendChild(el("line", {x1:M.l, x2:660-M.r, y1:g.sy(PR), y2:g.sy(PR), stroke:LGRAY, "stroke-dasharray":"5 4"}));
+  svg.appendChild(el("text", {x:g.sx(PD)+4, y:M.t+10, fill:GRAY, "font-size":11}, `平台延迟率 ${PD.toFixed(2)}%`));
+  svg.appendChild(el("text", {x:M.l+4, y:g.sy(PR)-6, fill:GRAY, "font-size":11}, `平台差评率 ${PR.toFixed(2)}%`));
+  pts.slice().sort((a,b) => b.vol - a.vol).forEach(d => {
+    const c = el("circle", {cx:g.sx(d.delay), cy:g.sy(d.rate), r:(4 + Math.sqrt(d.vol)/6.2).toFixed(1),
+      fill:SKY, "fill-opacity":.62, stroke:NAVY, "stroke-width":1});
+    if (sel && sel !== d.cat) c.setAttribute("class", "dim");
+    c.style.cursor = "pointer";
+    c.onmousemove = e => showTip(e, `<b>${d.cn}</b><br>销量 ${d.vol.toLocaleString()} 件 · 差评率 ${fmt(d.rate,2)}%<br>
+      延迟率 ${fmt(d.delay,2)}% · 延迟组 ${fmt(d.pd,2)}% / 准时组 ${fmt(d.po,2)}%<br>
+      延迟贡献 ${fmt(d.contrib,2)}pp（占差评 ${fmt(d.share,1)}%）`);
+    c.onmouseleave = hideTip;
+    c.onclick = () => pickCat(d.cat);
+    svg.appendChild(c);
+    if (d.cat === sel) svg.appendChild(el("text", {x:g.sx(d.delay)+10, y:g.sy(d.rate)+3, fill:NAVY,
+      "font-size":12, "font-weight":"bold"}, d.cn));
+  });
+
+  const svg2 = document.getElementById("bar"); svg2.innerHTML = "";
+  const top = base.slice().sort((a,b) => b.vol - a.vol).slice(0,12).sort((a,b) => a.rate - b.rate);
+  const M2 = {l:78, r:34, t:14, b:40}, W = 660, H = 440, bw = (H - M2.t - M2.b) / top.length;
+  const xmax = 28, bx = v => M2.l + v / xmax * (W - M2.l - M2.r);
+  [0,5,10,15,20,25].forEach(v => { svg2.appendChild(el("line", {x1:bx(v), x2:bx(v), y1:M2.t, y2:H-M2.b, stroke:"#EFF3F3"}));
+    svg2.appendChild(el("text", {x:bx(v), y:H-M2.b+16, fill:GRAY, "font-size":11, "text-anchor":"middle"}, v)); });
+  svg2.appendChild(el("line", {x1:bx(PR), x2:bx(PR), y1:M2.t, y2:H-M2.b, stroke:NAVY, "stroke-dasharray":"6 4"}));
+  svg2.appendChild(el("text", {x:bx(PR)+4, y:M2.t+10, fill:NAVY, "font-size":11}, `平台整体差评率 ${PR.toFixed(2)}%`));
+  svg2.appendChild(el("text", {x:(M2.l+W-M2.r)/2, y:H-6, fill:GRAY, "font-size":12, "text-anchor":"middle"}, "差评率（%）"));
+  top.forEach((d, i) => {
+    const y = M2.t + i * bw, h = bw * 0.62, self = d.rate - d.contrib;
+    const dimmed = sel && sel !== d.cat;
+    const g1 = el("g", {}); if (dimmed) g1.setAttribute("class", "dim");
+    g1.appendChild(el("rect", {x:M2.l, y, width:bx(self)-M2.l, height:h, fill:LGRAY}));
+    g1.appendChild(el("rect", {x:bx(self), y, width:bx(d.rate)-bx(self), height:h, fill:ORANGE}));
+    g1.appendChild(el("text", {x:M2.l-8, y:y+h/2+4, fill:GRAY, "font-size":11.5, "text-anchor":"end"}, d.cn));
+    g1.appendChild(el("text", {x:bx(d.rate)+5, y:y+h/2+4, fill:GRAY, "font-size":11}, fmt(d.rate,1)+"%"));
+    if (d.contrib >= 1.2) g1.appendChild(el("text", {x:(bx(self)+bx(d.rate))/2, y:y+h/2+4, fill:"#fff",
+      "font-size":10.5, "font-weight":"bold", "text-anchor":"middle"}, fmt(d.contrib,1)));
+    g1.style.cursor = "pointer";
+    g1.onmousemove = e => showTip(e, `<b>${d.cn}</b> · 销量 ${d.vol.toLocaleString()} 件<br>
+      差评率 ${fmt(d.rate,2)}% = 品类自身 ${fmt(self,2)} + 延迟贡献 ${fmt(d.contrib,2)}pp<br>
+      延迟率 ${fmt(d.delay,2)}% · 超额差评 ${fmt(d.excess, 0)} 件`);
+    g1.onmouseleave = hideTip;
+    g1.onclick = () => pickCat(d.cat);
+    svg2.appendChild(g1);
+  });
+
+  const keys = [["cn","品类"],["vol","销量（件）"],["rate","差评率 %"],["delay","延迟率 %"],["pd","延迟组差评率 %"],
+                ["po","准时组差评率 %"],["contrib","延迟贡献 pp"],["share","延迟贡献占比 %"],["excess","超额差评（件）"]];
+  const rs = shown().slice().sort((a,b) => {
+    const va = a[sortKey], vb = b[sortKey];
+    const na = (va == null) ? -Infinity : va, nb = (vb == null) ? -Infinity : vb;
+    return (sortAsc ? 1 : -1) * (na > nb ? 1 : na < nb ? -1 : 0);
+  });
+  let th = "<tr>" + keys.map(([k,label]) => `<th data-k="${k}" class="${k===sortKey?'sorted':''}">${label}${k===sortKey?(sortAsc?' ▲':' ▼'):''}</th>`).join("") + "</tr>";
+  let tb = rs.map(d => `<tr class="${d.cat===sel?'hi':''}"><td>${d.cn}</td><td>${d.vol.toLocaleString()}</td>
+      <td>${fmt(d.rate,2)}</td><td>${fmt(d.delay,2)}</td><td>${fmt(d.pd,2)}</td><td>${fmt(d.po,2)}</td>
+      <td>${fmt(d.contrib,2)}</td><td>${fmt(d.share,1)}</td><td>${fmt(d.excess, 0)}</td></tr>`).join("");
+  document.getElementById("tablebox").innerHTML = `<table><thead>${th}</thead><tbody>${tb}</tbody></table>`;
+  document.querySelectorAll("th").forEach(t => t.onclick = () => {
+    const k = t.dataset.k; if (k === sortKey) sortAsc = !sortAsc; else { sortKey = k; sortAsc = (k === "cn"); } draw(); });
+}
+document.getElementById("minvol").onchange = e => { minVol = +e.target.value; draw(); };
+document.getElementById("q").oninput = e => { q = e.target.value.trim(); draw(); };
+draw();
+</script></body></html>
