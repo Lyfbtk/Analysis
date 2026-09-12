@@ -243,3 +243,95 @@ print(pred_df.to_string(index=False))
 print()
 print("说明：SES 为历史趋势外推；品类间预测差异来自各品类销量走势，不构成经营承诺")
 print("结果表已输出：品类销量预测.csv")
+
+# ---------------------------------------------------------------- 模块⑥ 差评文本主题归类
+# 口径：评论文本去重音后关键词匹配（规则分类，不是 NLP 模型）；一个评论可命中多个主题；
+# 统计的是"提及率"（该组订单中有多少比例提到该主题），差评/好评按订单平均分 ≤2 划分
+import unicodedata
+
+def norm(s):
+    return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().lower()
+
+KEYWORDS = {
+    "物流配送": ["entrega", "atraso", "atrasou", "demorou", "demora", "prazo", "chegou", "correios", "transportadora", "frete", "rastreio", "nao chegou", "nao recebi", "entrega atrasada"],
+    "商品质量": ["qualidade", "ruim", "pessimo", "quebrado", "quebrada", "defeito", "estragou", "fragil", "danificado", "parou de funcionar", "nao funciona", "material"],
+    "描述/尺寸不符": ["tamanho", "pequeno", "pequena", "grande demais", "diferente", "foto", "anuncio", "descricao", "nao e como", "cor errada", "nao corresponde"],
+    "包装破损": ["embalagem", "amassado", "arranhado", "riscado", "molhado", "rachado"],
+    "售后/客服": ["atendimento", "vendedor", "troca", "devolucao", "reembolso", "estorno", "contato", "suporte", "cancel"],
+}
+
+rv = reviews.groupby("order_id")["review_comment_message"].apply(
+    lambda s: " ".join(s.dropna().astype(str))).reset_index()
+rv = rv.merge(review_avg, on="order_id", how="inner")
+rv["文本norm"] = rv["review_comment_message"].apply(norm)
+rv["差评"] = (rv["review_score"] <= 2).astype(int)
+
+rows = []
+for theme, kws in KEYWORDS.items():
+    kws_n = [norm(k) for k in kws]
+    hit = rv["文本norm"].apply(lambda t: any(k in t for k in kws_n))
+    bad_hit = (hit & (rv["差评"] == 1)).sum()
+    good_hit = (hit & (rv["差评"] == 0)).sum()
+    bad_n = (rv["差评"] == 1).sum()
+    good_n = (rv["差评"] == 0).sum()
+    rows.append({"主题": theme, "差评提及数": int(bad_hit), "差评提及率%": round(bad_hit / bad_n * 100, 1),
+                 "好评提及率%": round(good_hit / good_n * 100, 1),
+                 "差评/好评倍率": round((bad_hit / bad_n) / (good_hit / good_n), 2)})
+
+theme_df = pd.DataFrame(rows).sort_values("差评提及率%", ascending=False).reset_index(drop=True)
+theme_df.to_csv(os.path.join(DATA_DIR, "差评主题.csv"), index=False, encoding="utf-8-sig")
+
+print()
+print("=== 模块⑥ 差评文本主题归类 ===")
+print(f"有文本评论的评分订单：{len(rv):,} / 有评分订单 {len(review_avg):,}")
+print(f"差评订单 {rv['差评'].sum():,}、好评订单 {(rv['差评'] == 0).sum():,}")
+print()
+print(theme_df.to_string(index=False))
+print()
+
+focus = d.merge(review_avg[["order_id", "review_score"]], on="order_id", how="left")
+focus = focus[focus["review_score"].notna()]
+bad_orders = set(rv[rv["差评"] == 1]["order_id"])
+focus["订单差评"] = focus["order_id"].isin(bad_orders)
+for 品类 in ["cama_mesa_banho", "moveis_decoracao", "moveis_escritorio", "beleza_saude"]:
+    sub = focus[focus["品类"] == 品类]
+    sub_bad = rv[rv["order_id"].isin(set(sub[sub["订单差评"]]["order_id"]))]
+    sub_good = rv[rv["order_id"].isin(set(sub[~sub["订单差评"]]["order_id"]))]
+    line = []
+    for theme, kws in KEYWORDS.items():
+        kws_n = [norm(k) for k in kws]
+        br = sub_bad["文本norm"].apply(lambda t: any(k in t for k in kws_n)).mean() * 100
+        gr = sub_good["文本norm"].apply(lambda t: any(k in t for k in kws_n)).mean() * 100
+        line.append(f"{theme} 差评{br:.0f}%/好评{gr:.0f}%")
+    print(f"[{品类}] 差评订单 {len(sub_bad):,}、好评订单 {len(sub_good):,}")
+    print("   " + " | ".join(line))
+print()
+print("结果表已输出：差评主题.csv")
+
+# ---------------------------------------------------------------- 模块⑦ 3C 品类竞争位
+# 口径：电脑配件/手机/电子三个 3C 类目的价格分布、差评率与区域分布，与全平台对照
+c3_names = ["informatica_acessorios", "telefonia", "eletronicos"]
+c3 = d[d["品类"].isin(c3_names)].copy()
+c3["大类"] = c3["品类"].map({
+    "informatica_acessorios": "电脑配件", "telefonia": "手机", "eletronicos": "电子"})
+c3_rows = []
+for 大类 in ["电脑配件", "手机", "电子"]:
+    s = c3[c3["大类"] == 大类]
+    q = s["单价"].quantile([0.25, 0.5, 0.75]).round(1)
+    top_state = s.groupby("customer_state")["order_id"].count().sort_values(ascending=False)
+    s1 = top_state.iloc[0] / len(s) * 100 if len(s) else 0
+    c3_rows.append({
+        "3C类目": 大类, "件数": len(s),
+        "P25元": q[0.25], "P50元": q[0.5], "P75元": q[0.75],
+        "差评率%": round(s["是否差评"].mean() * 100, 2),
+        "平均评分": round(s["评分"].mean(), 2),
+        "最大区域": top_state.index[0], "最大区域占比%": round(s1, 1),
+    })
+c3_df = pd.DataFrame(c3_rows)
+c3_df.to_csv(os.path.join(DATA_DIR, "3C品类竞争位.csv"), index=False, encoding="utf-8-sig")
+
+print()
+print("=== 模块⑦ 3C 品类竞争位（对照：全平台差评率 14.73%、P50 74.9 元）===")
+print(c3_df.to_string(index=False))
+print()
+print("结果表已输出：3C品类竞争位.csv")
