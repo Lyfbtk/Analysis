@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import pandas as pd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -228,11 +229,47 @@ for 品类 in top8:
                  "预测下2月": round(next3[1]), "预测下3月": round(next3[2]), "近12月均值": round(s.iloc[-12:].mean())})
 
 pred_df = pd.DataFrame(rows)
-pred_df.to_csv(os.path.join(DATA_DIR, "品类销量预测.csv"), index=False, encoding="utf-8-sig")
 
 tot = monthly.groupby("月份")["件数"].sum().sort_index()
 tot_pred = ses(tot, alpha=0.3)
 tot_test = pd.Series([tot_pred.iloc[:-4].iloc[-1]] * 4, index=tot.index[-4:])
+tot_mape = mape(tot.iloc[-4:], tot_test)
+
+pred_df = pd.concat([pd.DataFrame([{
+    "品类": "平台总体", "最后4月MAPE%": round(tot_mape, 1),
+    "预测下1月": round(tot_pred.iloc[-1]), "预测下2月": round(tot_pred.iloc[-1]),
+    "预测下3月": round(tot_pred.iloc[-1]), "近12月均值": round(tot.iloc[-12:].mean())}]), pred_df],
+    ignore_index=True)
+pred_df.to_csv(os.path.join(DATA_DIR, "品类销量预测.csv"), index=False, encoding="utf-8-sig")
+
+long_rows = []
+for 名称 in ["平台总体"] + top8:
+    s = tot if 名称 == "平台总体" else monthly[monthly["品类"] == 名称].set_index("月份")["件数"].sort_index().reindex(
+        pd.period_range(P0, P1, freq="M"), fill_value=0)
+    for m, v in s.items():
+        long_rows.append({"序列": 名称, "月份": str(m), "件数": int(v)})
+pd.DataFrame(long_rows).to_csv(os.path.join(DATA_DIR, "月度销量.csv"), index=False, encoding="utf-8-sig")
+
+def linreg_forecast(train, test):
+    x = np.arange(len(train)); y = train.values.astype(float)
+    b, a = np.polyfit(x, y, 1)
+    xs = np.arange(len(train), len(train) + len(test))
+    return pd.Series(a + b * xs, index=test.index)
+
+def ma3_forecast(train, test):
+    return pd.Series([train.iloc[-3:].mean()] * len(test), index=test.index)
+
+comp = []
+for 名称 in ["平台总体"] + top8:
+    s = tot if 名称 == "平台总体" else monthly[monthly["品类"] == 名称].set_index("月份")["件数"].sort_index().reindex(
+        pd.period_range(P0, P1, freq="M"), fill_value=0)
+    tr, te = s.iloc[:-4], s.iloc[-4:]
+    comp.append({"序列": 名称,
+                 "SES_MAPE%": round(mape(te, ses(tr, 0.3)), 1),
+                 "线性回归_MAPE%": round(mape(te, linreg_forecast(tr, te)), 1),
+                 "3期移动平均_MAPE%": round(mape(te, ma3_forecast(tr, te)), 1)})
+comp_df = pd.DataFrame(comp)
+comp_df.to_csv(os.path.join(DATA_DIR, "预测模型对照.csv"), index=False, encoding="utf-8-sig")
 print()
 print("=== 模块⑤ 品类销量趋势与预测 ===")
 print(f"月度序列：{P0} ~ {P1}（{len(tot)} 个月），平台月均销量 {round(tot.mean()):,} 件")
@@ -241,8 +278,12 @@ print(f"平台未来 3 个月预测（SES 常数外推）：{round(tot_pred.iloc
 print()
 print(pred_df.to_string(index=False))
 print()
+print("模型对照（同口径回测，MAPE 越低越好）：")
+print(comp_df.to_string(index=False))
+print(f"平均 MAPE — SES {comp_df['SES_MAPE%'].mean():.1f}% / 线性回归 {comp_df['线性回归_MAPE%'].mean():.1f}% / 3期移动平均 {comp_df['3期移动平均_MAPE%'].mean():.1f}%")
+print()
 print("说明：SES 为历史趋势外推；品类间预测差异来自各品类销量走势，不构成经营承诺")
-print("结果表已输出：品类销量预测.csv")
+print("结果表已输出：品类销量预测.csv、月度销量.csv、预测模型对照.csv")
 
 # ---------------------------------------------------------------- 模块⑥ 差评文本主题归类
 # 口径：评论文本去重音后关键词匹配（规则分类，不是 NLP 模型）；一个评论可命中多个主题；
