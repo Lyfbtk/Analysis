@@ -191,3 +191,55 @@ r1 = jr[jr["是否延迟"] == 1]["是否差评"].mean()
 r0 = jr[jr["是否延迟"] == 0]["是否差评"].mean()
 print(f"稳健性（剔除里约）：延迟贡献 {wr * (r1 - r0) * 100:.2f} 个百分点，占 {wr * (r1 - r0) / t2 * 100:.1f}%")
 print("结果表已输出：品类履约联合.csv")
+
+# ---------------------------------------------------------------- 模块⑤ 品类销量趋势与预测
+# 口径：delivered 订单的商品行数（件数）按购买月份聚合；预测为历史趋势外推（指数平滑），
+# 不是因果预测——数据没有曝光/价格弹性/竞品字段，外推结果只用于趋势展示
+orders["购买日期"] = pd.to_datetime(orders["order_purchase_timestamp"])
+ts = df.merge(orders[["order_id", "购买日期"]], on="order_id", how="left")
+ts["月份"] = ts["购买日期"].dt.to_period("M")
+P0, P1 = pd.Period("2016-10"), pd.Period("2018-08")
+valid = ts[(ts["月份"] >= P0) & (ts["月份"] <= P1)]
+monthly = valid.groupby(["品类", "月份"]).agg(件数=("order_id", "count")).reset_index()
+
+def ses(series, alpha):
+    level = float(series.iloc[0])
+    out = [level]
+    for x in series.iloc[1:]:
+        level = alpha * float(x) + (1 - alpha) * level
+        out.append(level)
+    return pd.Series(out, index=series.index)
+
+def mape(actual, pred):
+    return float((abs(actual - pred) / actual).mean() * 100)
+
+top8 = list(monthly.groupby("品类")["件数"].sum().sort_values(ascending=False).head(8).index)
+rows = []
+for 品类 in top8:
+    s = monthly[monthly["品类"] == 品类].set_index("月份")["件数"].sort_index()
+    s = s.reindex(pd.period_range(P0, P1, freq="M"), fill_value=0)
+    train, test = s.iloc[:-4], s.iloc[-4:]
+    pred = ses(train, alpha=0.3)
+    pred_test = pd.Series([pred.iloc[-1]] * len(test), index=test.index)
+    e = mape(test, pred_test)
+    full = ses(s, alpha=0.3)
+    next3 = [full.iloc[-1]] * 3
+    rows.append({"品类": 品类, "最后4月MAPE%": round(e, 1), "预测下1月": round(next3[0]),
+                 "预测下2月": round(next3[1]), "预测下3月": round(next3[2]), "近12月均值": round(s.iloc[-12:].mean())})
+
+pred_df = pd.DataFrame(rows)
+pred_df.to_csv(os.path.join(DATA_DIR, "品类销量预测.csv"), index=False, encoding="utf-8-sig")
+
+tot = monthly.groupby("月份")["件数"].sum().sort_index()
+tot_pred = ses(tot, alpha=0.3)
+tot_test = pd.Series([tot_pred.iloc[:-4].iloc[-1]] * 4, index=tot.index[-4:])
+print()
+print("=== 模块⑤ 品类销量趋势与预测 ===")
+print(f"月度序列：{P0} ~ {P1}（{len(tot)} 个月），平台月均销量 {round(tot.mean()):,} 件")
+print(f"平台总体 SES 回测 MAPE：{mape(tot.iloc[-4:], tot_test):.1f}%")
+print(f"平台未来 3 个月预测（SES 常数外推）：{round(tot_pred.iloc[-1]):,} 件/月")
+print()
+print(pred_df.to_string(index=False))
+print()
+print("说明：SES 为历史趋势外推；品类间预测差异来自各品类销量走势，不构成经营承诺")
+print("结果表已输出：品类销量预测.csv")
