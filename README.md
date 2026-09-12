@@ -108,6 +108,10 @@
 |:--:|:--:|
 | ![区域市场](market/图表/区域市场图.png) | ![区域品类](market/图表/区域品类偏好图.png) |
 
+| 销量趋势与预测 | 差评主题对比 | 3C 品类竞争位 |
+|:--:|:--:|:--:|
+| ![销量预测](market/图表/销量趋势与预测.png) | ![差评主题](market/图表/差评主题对比.png) | ![3C](market/图表/3C品类竞争位.png) |
+
 **品类 × 履约联合**（`analysis.py` 模块④）
 
 整页汇总（Python 制图）：
@@ -125,7 +129,7 @@
 ![看板_品类履约](market/图表/看板_品类履约.png)
 
 > 看板用 Power BI Desktop 制作，页面截图见上方 07-10；与 Python 结果互验的 SQL 查询见 [logistics/olist数据.sql](logistics/olist数据.sql)（口径说明 [logistics/sql代码说明.md](logistics/sql代码说明.md)）。
-> `logistics/图表/` 的图为分析结果导出（Python 制图 + Power BI 看板），生成脚本不在仓库；`market/图表/` 的 7 张图由 [market/charts.py](market/charts.py) 生成（含品类 × 履约联合 2 张与整页汇总 1 张），可重跑复现。
+> `logistics/图表/` 的图为分析结果导出（Python 制图 + Power BI 看板），生成脚本不在仓库；`market/图表/` 的 11 张图由 [market/charts.py](market/charts.py) 生成（含品类 × 履约联合 3 张、预测/文本/3C 各 1 张），可重跑复现。
 
 ## 六、目录结构
 
