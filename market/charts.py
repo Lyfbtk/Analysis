@@ -487,3 +487,95 @@ pbi = pbi[["品类中文", "品类", "销量", "差评率", "延迟率", "延迟
            "延迟贡献", "延迟贡献占比", "超额差评件数"]]
 pbi.to_csv(os.path.join(DATA_DIR, "品类履约联合_PowerBI.csv"), index=False, encoding="utf-8-sig")
 print("Power BI 导入用表已输出：data/品类履约联合_PowerBI.csv（含中文品类名）")
+
+# ---------------- 模块⑤ 销量趋势与预测图 ----------------
+ms = pd.read_csv(os.path.join(DATA_DIR, "月度销量.csv"), encoding="utf-8-sig")
+pred = pd.read_csv(os.path.join(DATA_DIR, "品类销量预测.csv"), encoding="utf-8-sig")
+plat_pred = pred[pred["品类"] == "平台总体"].iloc[0]
+plat = ms[ms["序列"] == "平台总体"].reset_index(drop=True)
+
+fig, axes = plt.subplots(1, 2, figsize=(13.5, 4.6))
+ax = axes[0]
+ax.bar(range(len(plat)), plat["件数"], color=SKY, label="月度实际销量")
+fx = [len(plat) - 1, len(plat), len(plat) + 1, len(plat) + 2]
+fy = [plat["件数"].iloc[-1], plat_pred["预测下1月"], plat_pred["预测下2月"], plat_pred["预测下3月"]]
+ax.plot(fx, fy, color=ORANGE, ls="--", lw=2.2, marker="o",
+        label=f"未来 3 个月预测（SES，回测 MAPE {plat_pred['最后4月MAPE%']}%）")
+ax.set_xticks([0, 4, 8, 12, 16, len(plat) - 1])
+ax.set_xticklabels([plat["月份"].iloc[i] for i in [0, 4, 8, 12, 16, len(plat) - 1]], fontsize=9)
+ax.set_ylabel("销量（件/月）")
+ax.set_title("平台月销量与未来 3 个月预测（趋势外推）", fontsize=12, color=NAVY, fontweight="bold")
+ax.legend(fontsize=9)
+ax.grid(axis="y", alpha=0.3)
+
+ax = axes[1]
+top3 = [s for s in ms["序列"].unique() if s != "平台总体"][:3]
+for name, color in zip(top3, [NAVY, ORANGE, "#27AE60"]):
+    sub = ms[ms["序列"] == name].reset_index(drop=True)
+    ax.plot(range(len(sub)), sub["件数"], marker="o", ms=3.5, lw=1.8, color=color, label=CN.get(name, name))
+sub0 = ms[ms["序列"] == top3[0]].reset_index(drop=True)
+xt = [0, 6, 12, 18, len(sub0) - 1]
+ax.set_xticks(xt)
+ax.set_xticklabels([sub0["月份"].iloc[i] for i in xt], fontsize=9)
+ax.set_ylabel("销量（件/月）")
+ax.set_title("销量 Top3 品类月度走势", fontsize=12, color=NAVY, fontweight="bold")
+ax.legend(fontsize=9)
+ax.grid(axis="y", alpha=0.3)
+fig.tight_layout()
+fig.savefig(os.path.join(FIG_DIR, "销量趋势与预测.png"), bbox_inches="tight", facecolor="white")
+plt.close(fig)
+
+# ---------------- 模块⑥ 差评主题对比图 ----------------
+th = pd.read_csv(os.path.join(DATA_DIR, "差评主题.csv"), encoding="utf-8-sig").sort_values("差评提及率%")
+fig, ax = plt.subplots(figsize=(9, 4.4))
+y = np.arange(len(th))
+ax.barh(y + 0.2, th["差评提及率%"], height=0.38, color=ORANGE, label="差评订单")
+ax.barh(y - 0.2, th["好评提及率%"], height=0.38, color=SKY, label="好评订单")
+for i, (b, g, r) in enumerate(zip(th["差评提及率%"], th["好评提及率%"], th["差评/好评倍率"])):
+    ax.text(b + 0.5, i + 0.2, f"{b}%", va="center", fontsize=9, color=ORANGE)
+    ax.text(g + 0.5, i - 0.2, f"{g}%", va="center", fontsize=9, color=GRAY)
+    ax.text(max(b, g) + 6.2, i, f"{r}×", va="center", fontsize=9.5, color=NAVY, fontweight="bold")
+ax.set_yticks(y)
+ax.set_yticklabels(th["主题"])
+ax.set_xlim(0, max(th["差评提及率%"]) + 10)
+ax.set_xlabel("提及率（该主题被提到的订单占比）")
+ax.set_title("差评第一痛点是物流，售后/客服倍率最高（差评 vs 好评）", fontsize=12, color=NAVY, fontweight="bold")
+ax.legend(fontsize=9, loc="lower right")
+ax.grid(axis="x", alpha=0.3)
+fig.tight_layout()
+fig.savefig(os.path.join(FIG_DIR, "差评主题对比.png"), bbox_inches="tight", facecolor="white")
+plt.close(fig)
+
+# ---------------- 模块⑦ 3C 品类竞争位图 ----------------
+c3 = pd.read_csv(os.path.join(DATA_DIR, "3C品类竞争位.csv"), encoding="utf-8-sig")
+fig, axes = plt.subplots(1, 2, figsize=(12.5, 4.4))
+x = np.arange(len(c3))
+ax = axes[0]
+ax.bar(x, c3["P50元"], color=NAVY, width=0.5, label="P50 中位价")
+ax.errorbar(x, c3["P50元"], yerr=[c3["P50元"] - c3["P25元"], c3["P75元"] - c3["P50元"]],
+            fmt="none", ecolor=GRAY, capsize=6, lw=1.5)
+ax.axhline(74.9, color=ORANGE, ls="--", lw=1.8, label="全平台 P50 = 74.9 元")
+for i, v in enumerate(c3["P50元"]):
+    ax.text(i, v + 4, f"{v:.0f} 元", ha="center", fontsize=9.5, color=NAVY)
+ax.set_xticks(x); ax.set_xticklabels(c3["3C类目"])
+ax.set_ylabel("单件价格（元）")
+ax.set_title("平台 3C 是低价配件市场（中线上方为高于全平台）", fontsize=11.5, color=NAVY, fontweight="bold")
+ax.legend(fontsize=9)
+ax.grid(axis="y", alpha=0.3)
+
+ax = axes[1]
+ax.bar(x, c3["差评率%"], color=ORANGE, width=0.5, label="差评率")
+ax.axhline(14.73, color=NAVY, ls="--", lw=1.8, label="全平台差评率 14.73%")
+for i, v in enumerate(c3["差评率%"]):
+    ax.text(i, v + 0.25, f"{v}%", ha="center", fontsize=9.5, color=ORANGE)
+ax.set_xticks(x); ax.set_xticklabels(c3["3C类目"])
+ax.set_ylabel("差评率（%）")
+ax.set_ylim(0, max(c3["差评率%"]) * 1.25)
+ax.set_title("3C 三个类目差评率均高于或接近全平台", fontsize=11.5, color=NAVY, fontweight="bold")
+ax.legend(fontsize=9)
+ax.grid(axis="y", alpha=0.3)
+fig.tight_layout()
+fig.savefig(os.path.join(FIG_DIR, "3C品类竞争位.png"), bbox_inches="tight", facecolor="white")
+plt.close(fig)
+
+print("新增 3 张图：销量趋势与预测.png、差评主题对比.png、3C品类竞争位.png")
