@@ -579,3 +579,79 @@ fig.savefig(os.path.join(FIG_DIR, "3C品类竞争位.png"), bbox_inches="tight",
 plt.close(fig)
 
 print("新增 3 张图：销量趋势与预测.png、差评主题对比.png、3C品类竞争位.png")
+
+# ---------------- 模块⑧ 订单全链路漏斗图 ----------------
+fn = pd.read_csv(os.path.join(DATA_DIR, "订单漏斗.csv"), encoding="utf-8-sig")
+stage = fn[fn["订单数"].notna()].reset_index(drop=True)
+days = fn[fn["订单数"].isna()].iloc[1:].reset_index(drop=True)
+
+fig, axes = plt.subplots(1, 2, figsize=(13, 4.4), gridspec_kw={"width_ratios": [1.35, 1]})
+ax = axes[0]
+y = np.arange(len(stage))[::-1]
+ax.barh(y, stage["订单数"], color=[NAVY, SKY, SKY, "#27AE60"], height=0.55)
+for i, yy in enumerate(y):
+    r = stage.iloc[i]
+    ax.text(r["订单数"] * 0.5, yy, f"{int(r['订单数']):,}", va="center", ha="center",
+            color="white", fontsize=10, fontweight="bold")
+    tail = f"占下单 {r['占下单%']:.2f}%" + (f"（本级流失 {int(r['本环节流失']):,}）" if r["本环节流失"] else "")
+    ax.text(r["订单数"] + stage["订单数"].max() * 0.02, yy, tail, va="center", fontsize=9, color=GRAY)
+ax.set_yticks(y)
+ax.set_yticklabels(stage["环节"])
+ax.set_xlim(0, stage["订单数"].max() * 1.42)
+ax.set_xlabel("订单数")
+ax.set_title("订单全链路漏斗：签收率 %.2f%%" % (stage["订单数"].iloc[-1] / stage["订单数"].iloc[0] * 100),
+             fontsize=12, color=NAVY, fontweight="bold")
+ax.grid(axis="x", alpha=0.3)
+
+ax = axes[1]
+ax.axis("off")
+ax.set_title("各环节平均耗时（天）", fontsize=12, color=NAVY, fontweight="bold", pad=12)
+for i, r in enumerate(days.itertuples()):
+    ax.text(0.05, 0.78 - i * 0.22, r.环节, fontsize=11, transform=ax.transAxes)
+    ax.text(0.95, 0.78 - i * 0.22, f"{r.平均天数:.1f} 天", fontsize=12, fontweight="bold",
+            color=ORANGE, ha="right", transform=ax.transAxes)
+    ax.plot([0.05, 0.95], [0.72 - i * 0.22, 0.72 - i * 0.22], color="#d5dbe1", lw=1,
+            transform=ax.transAxes, clip_on=False)
+tot = days["平均天数"].sum()
+ax.text(0.05, 0.78 - 3 * 0.22, "全链路合计", fontsize=11, fontweight="bold", transform=ax.transAxes)
+ax.text(0.95, 0.78 - 3 * 0.22, f"{tot:.1f} 天", fontsize=12, fontweight="bold", color=NAVY,
+        ha="right", transform=ax.transAxes)
+fig.tight_layout()
+fig.savefig(os.path.join(FIG_DIR, "订单漏斗图.png"), bbox_inches="tight", facecolor="white")
+plt.close(fig)
+
+# ---------------- 模块⑨ 用户复购与分层图 ----------------
+ly = pd.read_csv(os.path.join(DATA_DIR, "用户复购分层.csv"), encoding="utf-8-sig")
+fig, axes = plt.subplots(1, 2, figsize=(12.5, 4.4))
+x = np.arange(len(ly)); w = 0.36
+ax = axes[0]
+ax.bar(x - w / 2, ly["客户占比%"], width=w, color=SKY, label="客户占比")
+ax.bar(x + w / 2, ly["消费占比%"], width=w, color=NAVY, label="消费金额占比")
+for i, (a, b) in enumerate(zip(ly["客户占比%"], ly["消费占比%"])):
+    ax.text(i - w / 2, a + 0.6, f"{a}%", ha="center", fontsize=9, color=GRAY)
+    ax.text(i + w / 2, b + 0.6, f"{b}%", ha="center", fontsize=9, color=NAVY, fontweight="bold")
+ax.set_xticks(x); ax.set_xticklabels(ly["层"])
+ax.set_ylabel("占比（%）")
+ax.set_title("复购客户仅占 3.2%，消费贡献 5.7%（客户 vs 消费占比）", fontsize=11.5, color=NAVY, fontweight="bold")
+ax.legend(fontsize=9)
+ax.grid(axis="y", alpha=0.3)
+
+ax = axes[1]
+ax.bar(x - w / 2, ly["人均消费"], width=w, color="#27AE60", label="人均消费（元）")
+ax2 = ax.twinx()
+ax2.plot(x + w / 2, ly["平均差评单占比%"], marker="o", lw=2, color=ORANGE, label="平均差评单占比（%）")
+for i, (v, d) in enumerate(zip(ly["人均消费"], ly["平均差评单占比%"])):
+    ax.text(i - w / 2, v + 20, f"{v:,.0f}", ha="center", fontsize=9, color="#27AE60")
+    ax2.text(i + w / 2, d + 0.4, f"{d}%", ha="center", fontsize=9, color=ORANGE)
+ax.set_xticks(x); ax.set_xticklabels(ly["层"])
+ax.set_ylabel("人均消费（元）", color="#27AE60")
+ax2.set_ylabel("平均差评单占比（%）", color=ORANGE)
+ax.set_title("高频客户人均消费更高、口碑更稳", fontsize=11.5, color=NAVY, fontweight="bold")
+h1, l1 = ax.get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels()
+ax.legend(h1 + h2, l1 + l2, fontsize=9, loc="upper left")
+ax.grid(axis="y", alpha=0.3)
+fig.tight_layout()
+fig.savefig(os.path.join(FIG_DIR, "用户复购分层图.png"), bbox_inches="tight", facecolor="white")
+plt.close(fig)
+
+print("新增 2 张图：订单漏斗图.png、用户复购分层图.png")

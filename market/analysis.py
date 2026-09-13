@@ -376,3 +376,100 @@ print("=== 模块⑦ 3C 品类竞争位（对照：全平台差评率 14.73%、P
 print(c3_df.to_string(index=False))
 print()
 print("结果表已输出：3C品类竞争位.csv")
+
+# ---------------------------------------------------------------- 模块⑧ 订单全链路漏斗
+# 口径：用 4 个时间戳（下单/支付批准/交承运商/签收）做真实链路转化，不是看状态占比；
+# 环节耗时只统计全链路完成的订单（4 个时间戳齐全）
+all_orders = pd.read_csv(os.path.join(BASE, "olist_orders_dataset.csv"), encoding="utf-8-sig")
+n_all = len(all_orders)
+steps = [("下单", "order_purchase_timestamp"), ("支付批准", "order_approved_at"),
+         ("交付承运商", "order_delivered_carrier_date"), ("买家签收", "order_delivered_customer_date")]
+f_rows, prev = [], None
+for label, col in steps:
+    cnt = int(all_orders[col].notna().sum())
+    f_rows.append({"环节": label, "订单数": cnt, "占下单%": round(cnt / n_all * 100, 2),
+                   "本环节流失": (prev - cnt) if prev is not None else 0})
+    prev = cnt
+funnel = pd.DataFrame(f_rows)
+
+ts4 = ["order_purchase_timestamp", "order_approved_at",
+       "order_delivered_carrier_date", "order_delivered_customer_date"]
+ok = all_orders.dropna(subset=ts4).copy()
+for c in ts4:
+    ok[c] = pd.to_datetime(ok[c])
+stage_days = pd.DataFrame({
+    "环节": ["下单→支付批准", "批准→交承运商", "交承运商→签收"],
+    "平均天数": [round((ok["order_approved_at"] - ok["order_purchase_timestamp"]).dt.days.mean(), 1),
+                 round((ok["order_delivered_carrier_date"] - ok["order_approved_at"]).dt.days.mean(), 1),
+                 round((ok["order_delivered_customer_date"] - ok["order_delivered_carrier_date"]).dt.days.mean(), 1)],
+})
+funnel_out = pd.concat([funnel, pd.DataFrame([{"环节": "—— 环节平均耗时 ——", "订单数": None, "占下单%": None, "本环节流失": None}]), stage_days], ignore_index=True)
+funnel_out.to_csv(os.path.join(DATA_DIR, "订单漏斗.csv"), index=False, encoding="utf-8-sig")
+
+lost = all_orders[all_orders["order_delivered_customer_date"].isna()]["order_status"].value_counts()
+print()
+print("=== 模块⑧ 订单全链路漏斗 ===")
+print(f"全部订单 {n_all:,} 单（含未签收）")
+print(funnel.to_string(index=False))
+print()
+print("各环节平均耗时（全链路完成订单）:")
+print(stage_days.to_string(index=False))
+print()
+print("未签收订单的状态分布:")
+print(lost.to_string())
+print()
+print("结果表已输出：订单漏斗.csv")
+
+# ---------------------------------------------------------------- 模块⑨ 用户复购与分层
+# 口径：客户唯一标识用 customer_unique_id（一个客户可能多次下单、每次生成新 customer_id）；
+# 复购 = 同一客户下单 ≥2 次；分层按订单数分为 一次性 / 2 次 / 3 次及以上
+cu = pd.read_csv(os.path.join(BASE, "olist_customers_dataset.csv"), encoding="utf-8-sig")[["customer_id", "customer_unique_id"]]
+oa = all_orders.merge(cu, on="customer_id", how="left")
+oa["购买日期"] = pd.to_datetime(oa["order_purchase_timestamp"])
+val = items.groupby("order_id")["price"].sum().rename("订单金额")
+oa = oa.merge(val, on="order_id", how="left")
+oa = oa.merge(review_avg.rename(columns={"review_score": "评分"}), on="order_id", how="left")
+
+cust = oa.groupby("customer_unique_id").agg(
+    订单数=("order_id", "nunique"),
+    消费总额=("订单金额", "sum"),
+    首次购买=("购买日期", "min"),
+    末次购买=("购买日期", "max"),
+).reset_index()
+cust["层"] = pd.cut(cust["订单数"], bins=[0, 1, 2, 10 ** 9], labels=["一次性", "2 次", "3 次及以上"])
+rep_rate = float((cust["订单数"] >= 2).mean() * 100)
+
+layer = cust.groupby("层", observed=False).agg(
+    客户数=("customer_unique_id", "count"),
+    总消费=("消费总额", "sum"),
+).reset_index()
+layer["客户占比%"] = (layer["客户数"] / len(cust) * 100).round(1)
+layer["消费占比%"] = (layer["总消费"] / cust["消费总额"].sum() * 100).round(1)
+layer["人均消费"] = (layer["总消费"] / layer["客户数"]).round(2)
+
+bad_by_cust = oa.groupby("customer_unique_id")["差评"].mean().rename("差评单占比")
+cust = cust.merge(bad_by_cust, on="customer_unique_id", how="left")
+
+layer = cust.groupby("层", observed=False).agg(
+    客户数=("customer_unique_id", "count"),
+    总消费=("消费总额", "sum"),
+    平均差评单占比=("差评单占比", "mean"),
+).reset_index()
+layer["客户占比%"] = (layer["客户数"] / len(cust) * 100).round(1)
+layer["消费占比%"] = (layer["总消费"] / cust["消费总额"].sum() * 100).round(1)
+layer["人均消费"] = (layer["总消费"] / layer["客户数"]).round(2)
+layer["平均差评单占比%"] = (layer["平均差评单占比"] * 100).round(2)
+layer = layer[["层", "客户数", "客户占比%", "消费占比%", "人均消费", "平均差评单占比%"]]
+layer.to_csv(os.path.join(DATA_DIR, "用户复购分层.csv"), index=False, encoding="utf-8-sig")
+
+print()
+print("=== 模块⑨ 用户复购与分层 ===")
+print(f"独立客户数（customer_unique_id）{len(cust):,} | 复购率（下单 ≥2 次）{rep_rate:.2f}%")
+print()
+print(layer.to_string(index=False))
+print()
+span = (cust["末次购买"].max() - cust["首次购买"].min()).days
+print(f"数据时间跨度 {span} 天（{cust['首次购买'].min().date()} ~ {cust['末次购买'].max().date()}）")
+print("说明：复购窗口受数据口径限制（仅 22 个月），复购率是下界估计")
+print()
+print("结果表已输出：用户复购分层.csv")
