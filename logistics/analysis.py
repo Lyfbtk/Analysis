@@ -102,9 +102,10 @@ route_2["是否跨州"] = route_2["是否跨州"].map({False:"州内", True:"跨
 route = route.merge(route_1[["距离档","基准延迟率"]],on="距离档",how="left")
 route["该订单延迟率-该档位平均延迟率"] = route["现状延迟率"]-route["基准延迟率"]
 route["延迟率是否不正常"] = (route["该订单延迟率-该档位平均延迟率"] >1).map({True:"不正常", False:"正常"})
-route["超额延迟贡献"] = (route["订单数"] * route["该订单延迟率-该档位平均延迟率"]).round(0)
+# 超额延迟订单数 = 订单数 × 超额延迟率(比例)。原实现漏除100，结果放大100倍，此处修正。
+route["超额延迟订单数"] = (route["订单数"] * route["该订单延迟率-该档位平均延迟率"] / 100).round(0)
 route_final = route[route["订单数"] >= 300]
-route_final = route_final.sort_values("超额延迟贡献", ascending=False)
+route_final = route_final.sort_values("超额延迟订单数", ascending=False)
 route_final.to_csv(os.path.join(OUT_DIR, "分线路统计.csv"), index=False, encoding="utf-8-sig", )
 
 route_1.to_csv(os.path.join(OUT_DIR, "距离档.csv"), index=False, encoding="utf-8-sig")
