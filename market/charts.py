@@ -655,3 +655,133 @@ fig.savefig(os.path.join(FIG_DIR, "用户复购分层图.png"), bbox_inches="tig
 plt.close(fig)
 
 print("新增 2 张图：订单漏斗图.png、用户复购分层图.png")
+
+# ---------------- 模块⑩ 品类 × 州 渗透指数热力图 ----------------
+jc = pd.read_csv(os.path.join(DATA_DIR, "区域品类.csv"), encoding="utf-8-sig")
+mt = jc[jc["入主表"] == "是"].copy()
+order_states = mt.groupby("customer_state")["件数"].sum().sort_values(ascending=False).index.tolist()
+order_cats = mt.groupby("品类")["件数"].sum().sort_values(ascending=False).index.tolist()
+piv = mt.pivot_table(index="品类", columns="customer_state", values="渗透指数").reindex(
+    index=order_cats, columns=order_states)
+dev = float(np.nanmax(np.abs(piv.values - 1)))
+fig, ax = plt.subplots(figsize=(9.5, 8.2))
+im = ax.imshow(piv.values, cmap="RdBu_r", vmin=1 - dev, vmax=1 + dev, aspect="auto")
+ax.set_xticks(range(len(piv.columns)))
+ax.set_xticklabels([STATE.get(s, s) for s in piv.columns], fontsize=10)
+ax.set_yticks(range(len(piv.index)))
+ax.set_yticklabels([CN.get(c, c) for c in piv.index], fontsize=9.5)
+for i in range(piv.shape[0]):
+    for j2 in range(piv.shape[1]):
+        v = piv.values[i, j2]
+        if not np.isnan(v):
+            ax.text(j2, i, f"{v:.2f}", ha="center", va="center", fontsize=7.5,
+                    color="white" if abs(v - 1) > dev * 0.6 else "#222")
+ax.set_title("品类 × 州 渗透指数（1.00 = 与全国结构一致；>1 相对超配、<1 相对低配）",
+             fontsize=12.5, fontweight="bold", color=NAVY, pad=12)
+cb = fig.colorbar(im, ax=ax, fraction=0.035, pad=0.02)
+cb.ax.tick_params(colors=GRAY, labelsize=9)
+ax.tick_params(colors=GRAY)
+fig.tight_layout()
+fig.savefig(os.path.join(FIG_DIR, "品类州渗透热力图.png"), bbox_inches="tight", facecolor="white")
+plt.close(fig)
+
+# ---------------- 模块⑩ 机会四象限 ----------------
+cell = mt[mt["件数"] >= 100].copy()
+plat = float((jc["差评率%"] * jc["件数"]).sum() / jc["件数"].sum())
+fig, ax = plt.subplots(figsize=(10, 6.4))
+ax.scatter(cell["渗透指数"], cell["差评率%"], s=cell["件数"] / 6, color=SKY, alpha=0.7, zorder=3)
+ax.axvline(1.0, color=LGRAY, linestyle="--", lw=1)
+ax.axhline(plat, color=LGRAY, linestyle="--", lw=1)
+pick = set(cell.sort_values("渗透指数", ascending=False).head(4)["品类"])
+pick |= set(cell.sort_values("差评率%", ascending=False).head(4)["品类"])
+for _, r in cell.iterrows():
+    if r["品类"] in pick:
+        ax.annotate(f"{CN.get(r['品类'], r['品类'])}·{STATE.get(r['customer_state'], r['customer_state'])}",
+                    (r["渗透指数"], r["差评率%"]), textcoords="offset points", xytext=(7, 4),
+                    fontsize=8.5, color=GRAY)
+ax.set_xlabel("渗透指数（该品类在该州的相对超配程度）", fontsize=11)
+ax.set_ylabel("该格差评率（%）", fontsize=11)
+ax.set_title("机会四象限：右上 = 相对超配且口碑差；左上 = 口碑差但渗透低（更可能是品类自身问题）",
+             fontsize=12, fontweight="bold", color=NAVY, pad=12)
+ax.spines[["top", "right"]].set_visible(False)
+ax.grid(linestyle="--", alpha=0.25)
+ax.tick_params(colors=GRAY)
+ax.legend(handles=[
+    Line2D([], [], marker="o", color="none", markerfacecolor=SKY, markersize=10,
+           label=f"气泡 = 该格件数（≥100 件才入图，共 {len(cell)} 格）"),
+    Line2D([], [], color=LGRAY, linestyle="--", label=f"渗透指数 1.00 / 格级加权差评率 {plat:.2f}%")],
+    loc="upper right", fontsize=9, frameon=False)
+fig.tight_layout()
+fig.savefig(os.path.join(FIG_DIR, "机会四象限.png"), bbox_inches="tight", facecolor="white")
+plt.close(fig)
+
+# ---------------- 模块⑪ 品类级产品痛点 ----------------
+pn = pd.read_csv(os.path.join(DATA_DIR, "品类产品痛点.csv"), encoding="utf-8-sig")
+pn = pn[pn["差评文本订单数"] >= 100].sort_values("产品类_扩展提及率%")
+y = np.arange(len(pn))
+h = 0.26
+fig, axes = plt.subplots(1, 2, figsize=(16.5, 7), gridspec_kw={"width_ratios": [1.15, 1]})
+ax = axes[0]
+ax.barh(y + h, pn["商品质量提及率%"], height=h, color=NAVY, label="商品质量", zorder=3)
+ax.barh(y, pn["描述/尺寸不符提及率%"], height=h, color=SKY, label="描述/尺寸不符", zorder=3)
+ax.barh(y - h, pn["履约类_扩展提及率%"], height=h, color=LGRAY,
+        label="履约类（物流/售后/包装/缺件，扩展口径，对照）", zorder=3)
+for i, (a, b, c) in enumerate(zip(pn["商品质量提及率%"], pn["描述/尺寸不符提及率%"], pn["履约类_扩展提及率%"])):
+    ax.text(a + 0.4, i + h, f"{a}", va="center", fontsize=7.5, color=NAVY)
+    ax.text(b + 0.4, i, f"{b}", va="center", fontsize=7.5, color=SKY)
+    ax.text(c + 0.4, i - h, f"{c:.0f}", va="center", fontsize=7.5, color=GRAY)
+ax.set_yticks(y)
+ax.set_yticklabels([CN.get(c, c) for c in pn["品类"]], fontsize=9.5)
+ax.set_xlabel("差评文本里的提及率（%，分母 = 该品类有文本的差评订单数）", fontsize=10.5)
+ax.set_title("产品类提及率越低、履约类越高 = 差评主要被配送和客服连累",
+             fontsize=11.5, fontweight="bold", color=NAVY)
+ax.legend(fontsize=8.5, loc="lower right", frameon=False)
+ax.spines[["top", "right"]].set_visible(False)
+ax.grid(axis="x", linestyle="--", alpha=0.25)
+ax.tick_params(colors=GRAY)
+
+ax2 = axes[1]
+for i, (o, e) in enumerate(zip(pn["产品类提及率%"], pn["产品类_扩展提及率%"])):
+    ax2.plot([o, e], [i, i], color=LGRAY, lw=2, zorder=2)
+ax2.scatter(pn["产品类提及率%"], y, s=46, color=SKY, zorder=3, label="原词典（模块⑥ 口径）")
+ax2.scatter(pn["产品类_扩展提及率%"], y, s=46, color=ORANGE, zorder=3, label="扩展词典（补缺件/错发/仿品/材质）")
+for i, e in enumerate(pn["产品类_扩展提及率%"]):
+    ax2.text(e + 0.4, i, f"{e}", va="center", fontsize=7.5, color=ORANGE)
+ax2.set_yticks(y)
+ax2.set_yticklabels([])
+ax2.set_xlabel("产品类提及率（%）", fontsize=10.5)
+ax2.set_title("两套词典对照：扩展后产品类提及率整体上移", fontsize=11.5, fontweight="bold", color=NAVY)
+ax2.legend(fontsize=8.5, loc="lower right", frameon=False)
+ax2.spines[["top", "right"]].set_visible(False)
+ax2.grid(axis="x", linestyle="--", alpha=0.25)
+ax2.tick_params(colors=GRAY)
+fig.tight_layout()
+fig.savefig(os.path.join(FIG_DIR, "品类产品痛点.png"), bbox_inches="tight", facecolor="white")
+plt.close(fig)
+
+# ---------------- 模块⑫ 价格分解 ----------------
+dc = pd.read_csv(os.path.join(DATA_DIR, "价格分解.csv"), encoding="utf-8-sig")
+tp = dc.reindex(dc["结构效应"].abs().sort_values(ascending=False).index).head(10).iloc[::-1]
+y = np.arange(len(tp))
+fig, ax = plt.subplots(figsize=(10.5, 5.8))
+ax.barh(y, tp["价格效应"], height=0.55, color=NAVY, label="价格效应（同款价差）", zorder=3)
+ax.barh(y, tp["结构效应"], left=tp["价格效应"], height=0.55, color=ORANGE,
+        label="结构效应（买的款式组合不同）", zorder=3)
+ax.scatter(tp["到手价差(州−SP)"], y, marker="D", s=44, color=GRAY, zorder=4, label="到手价差（含运费）")
+for i, (pe, se, dy) in enumerate(zip(tp["价格效应"], tp["结构效应"], tp["到手价差(州−SP)"])):
+    ax.text(max(pe + se, dy) + 4, i, f"{pe + se:+.0f} 元", va="center", fontsize=8.5, color=NAVY)
+ax.axvline(0, color=GRAY, lw=1)
+ax.set_yticks(y)
+ax.set_yticklabels([f"{CN.get(c, c)}·{STATE.get(s, s)}" for c, s in zip(tp["品类"], tp["州"])], fontsize=9.5)
+ax.set_xlabel("相对圣保罗的均价差（元，双州共同商品篮子内分解）", fontsize=11)
+ax.set_title("州际价差主要来自买的款式不同，而非同款定价不同（|结构效应| 最大 10 组）",
+             fontsize=12, fontweight="bold", color=NAVY, pad=12)
+ax.legend(fontsize=9, loc="lower right", frameon=False)
+ax.spines[["top", "right"]].set_visible(False)
+ax.grid(axis="x", linestyle="--", alpha=0.25)
+ax.tick_params(colors=GRAY)
+fig.tight_layout()
+fig.savefig(os.path.join(FIG_DIR, "价格分解.png"), bbox_inches="tight", facecolor="white")
+plt.close(fig)
+
+print("新增 4 张图：品类州渗透热力图.png、机会四象限.png、品类产品痛点.png、价格分解.png")

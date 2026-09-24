@@ -79,17 +79,9 @@ dr["差评率"] = (dr["差评率"] * 100).round(2)
 region = region.merge(dr, on="customer_state", how="left")
 region.to_csv(os.path.join(DATA_DIR, "区域画像.csv"), index=False, encoding="utf-8-sig")
 
-region_cat = d_all.groupby(["customer_state", "品类"]).agg(
-    件数=("order_id", "count"),
-    件均价=("单价", "mean"),
-).reset_index()
-region_cat["件均价"] = region_cat["件均价"].round(2)
-region_cat = region_cat.sort_values(["customer_state", "件数"], ascending=False).reset_index(drop=True)
-region_cat.to_csv(os.path.join(DATA_DIR, "区域品类.csv"), index=False, encoding="utf-8-sig")
-
 print("=== 模块③ 区域画像 Top 10 ===")
 print(region.head(10).to_string(index=False))
-print("州数:", len(region), "| 州×品类组合数:", len(region_cat))
+print("州数:", len(region), "| 州×品类表（区域品类.csv）由模块⑩ 统一底座输出")
 print()
 
 
@@ -478,3 +470,271 @@ print(f"数据时间跨度 {span} 天（{cust['首次购买'].min().date()} ~ {c
 print("说明：复购窗口受数据口径限制（仅 22 个月），复购率是下界估计")
 print()
 print("结果表已输出：用户复购分层.csv")
+
+# ---------------------------------------------------------------- 模块⑩ 品类 × 州：双占比与渗透指数
+# 口径：底座与模块④一致（有评分 + 已签收的商品行，见 方法与口径.md 3.13）；不使用全商品行口径，
+# 避免同一品类出现两套件数。两张占比互为校验：州占该品类%（行内合计 100%）与渗透指数（区位商）。
+jc_state = j.groupby(["customer_state", "品类"]).agg(
+    件数=("order_id", "count"),
+    件均价=("单价", "mean"),
+    差评率=("是否差评", "mean"),
+).reset_index()
+cat_sum = jc_state.groupby("品类")["件数"].sum().rename("品类全国件数")
+state_sum = jc_state.groupby("customer_state")["件数"].sum().rename("州全国件数")
+N_js = int(jc_state["件数"].sum())
+jc_state = jc_state.merge(cat_sum, on="品类", how="left").merge(state_sum, on="customer_state", how="left")
+jc_state["州占该品类%"] = (jc_state["件数"] / jc_state["品类全国件数"] * 100).round(2)
+jc_state["州内品类结构%"] = (jc_state["件数"] / jc_state["州全国件数"] * 100).round(2)
+jc_state["全国品类结构%"] = (jc_state["品类全国件数"] / N_js * 100).round(2)
+jc_state["渗透指数"] = ((jc_state["件数"] / jc_state["州全国件数"]) / (jc_state["品类全国件数"] / N_js)).round(3)
+jc_state["件均价"] = jc_state["件均价"].round(2)
+jc_state["差评率%"] = (jc_state["差评率"] * 100).round(2)
+main_cats = [c for c in cat_sum[cat_sum >= 1000].sort_values(ascending=False).index if c != "未分类"]
+top_states = list(state_sum.sort_values(ascending=False).head(8).index)
+jc_state["入主表"] = np.where(
+    jc_state["customer_state"].isin(top_states) & jc_state["品类"].isin(main_cats), "是", "")
+jc_state = jc_state[["customer_state", "品类", "件数", "件均价", "州占该品类%", "州内品类结构%",
+                     "全国品类结构%", "渗透指数", "差评率%", "入主表"]]
+jc_state = jc_state.sort_values(["customer_state", "件数"], ascending=[True, False]).reset_index(drop=True)
+jc_state.to_csv(os.path.join(DATA_DIR, "区域品类.csv"), index=False, encoding="utf-8-sig")
+
+main_tab = jc_state[jc_state["入主表"] == "是"]
+print()
+print("=== 模块⑩ 品类 × 州：双占比与渗透指数 ===")
+print(f"统一底座件数 {N_js:,}（模块④口径：有评分 + 已签收）｜主表 = 前 8 州 × {len(main_cats)} 个主力品类 "
+      f"= {len(main_tab)} 格，覆盖件数 {main_tab['件数'].sum() / N_js * 100:.1f}%")
+print(f"全表 {len(jc_state)} 格｜格子件数中位数：主表 {int(main_tab['件数'].median())}、全表 {int(jc_state['件数'].median())}")
+chk = jc_state.groupby("品类")["州占该品类%"].sum()
+print(f"自检：州占该品类% 行内合计 = 100%（最大偏差 {abs(chk - 100).max():.2f} 个百分点）")
+print()
+print("渗透指数最高 6 格：")
+print(main_tab.sort_values("渗透指数", ascending=False).head(6)[
+    ["品类", "customer_state", "件数", "州占该品类%", "渗透指数", "差评率%"]].to_string(index=False))
+print("渗透指数最低 6 格：")
+print(main_tab.sort_values("渗透指数").head(6)[
+    ["品类", "customer_state", "件数", "州占该品类%", "渗透指数", "差评率%"]].to_string(index=False))
+print()
+print("结果表已输出：区域品类.csv（统一底座 + 双占比 + 渗透指数）")
+
+# ---------------------------------------------------------------- 模块⑪ 品类级产品痛点（主题二分 + 词 lift）
+# 口径：主题沿用模块⑥ 的 5 类关键词规则匹配（不拆细），按性质二分——履约类（物流/售后/包装）、
+# 产品类（质量/描述尺寸）；统计单位 = 有文本的差评订单；分母 <100 的格子留空，不填 0
+oc = j[["order_id", "品类"]].drop_duplicates()
+multi_cat = oc.groupby("order_id")["品类"].nunique()
+hit = pd.DataFrame({"order_id": rv["order_id"], "是否差评": rv["差评"]})
+for _t, _kws in KEYWORDS.items():
+    _kn = [norm(k) for k in _kws]
+    hit[_t] = rv["文本norm"].apply(lambda t: any(k in t for k in _kn))
+hit["履约类"] = hit[["物流配送", "售后/客服", "包装破损"]].any(axis=1)
+hit["产品类"] = hit[["商品质量", "描述/尺寸不符"]].any(axis=1)
+
+# 扩展词典（敏感性检验用，不改模块⑥ 的既有平台级口径）：
+# 抽检发现原词典是"高精准、低召回"，漏配集中在缺件、错发、仿品、材质四类，故补词重算
+EXT = {
+    "订单不完整": ["faltou", "faltando", "faltam", "incompleto", "recebi metade", "somente um",
+                   "apenas um", "so veio", "veio somente", "vieram apenas", "recebi apenas",
+                   "nao veio", "falta um", "dos dois", "dos tres"],
+    "错发/规格不符": ["outro modelo", "veio outro", "mandaram outro", "enviaram outro", "produto errado",
+                     "modelo errado", "cor errada", "tamanho errado", "veio errado", "era outro",
+                     "veio diferente", "nao era o que", "gramsatura", "gramatura", "medidas"],
+    "仿品/非原装": ["replica", "falso", "falsa", "paralelo", "falsificado", "nao e original",
+                    "nao original", "nao aparentava"],
+    "材质/做工": ["plastico", "acabamento", "aspero", "aspera", "costura", "muito leve", "material ruim",
+                  "material fraco", "fino demais"],
+}
+for _t, _kws in EXT.items():
+    _kn = [norm(k) for k in _kws]
+    hit[_t] = rv["文本norm"].apply(lambda t: any(k in t for k in _kn))
+hit["履约类_扩展"] = hit[["物流配送", "售后/客服", "包装破损", "订单不完整"]].any(axis=1)
+hit["产品类_扩展"] = hit[["商品质量", "描述/尺寸不符", "错发/规格不符", "仿品/非原装", "材质/做工"]].any(axis=1)
+
+THEMES = list(KEYWORDS.keys()) + ["履约类", "产品类"]
+THEMES_EXT = list(KEYWORDS.keys()) + list(EXT.keys()) + [
+    "履约类", "产品类", "履约类_扩展", "产品类_扩展"]
+bad_hit = hit[hit["是否差评"] == 1].merge(oc, on="order_id", how="inner")
+
+rows = []
+for _c in main_cats:
+    s = bad_hit[bad_hit["品类"] == _c]
+    if len(s) == 0:
+        continue
+    r = {"品类": _c, "差评文本订单数": len(s)}
+    for _t in THEMES_EXT:
+        r[_t + "提及率%"] = round(s[_t].mean() * 100, 1) if len(s) >= 100 else None
+    r["产品类/履约类"] = round(s["产品类"].mean() / s["履约类"].mean(), 2) if len(s) >= 100 else None
+    r["产品类/履约类_扩展"] = round(
+        s["产品类_扩展"].mean() / s["履约类_扩展"].mean(), 2) if len(s) >= 100 else None
+    rows.append(r)
+pain = pd.DataFrame(rows).sort_values("差评文本订单数", ascending=False).reset_index(drop=True)
+pain.to_csv(os.path.join(DATA_DIR, "品类产品痛点.csv"), index=False, encoding="utf-8-sig")
+
+_w = rv[rv["差评"] == 1][["order_id", "文本norm"]].copy()
+_w["词"] = _w["文本norm"].str.split(r"[^a-z]+")
+_w = _w.explode("词")
+_w = _w[_w["词"].str.len() >= 4]
+STOP_PT = {"para", "mais", "esta", "este", "isso", "pelo", "pela", "sobre", "depois", "antes",
+           "entre", "cada", "outro", "outra", "porque", "pois", "entao", "apenas", "desde", "mesmo",
+           "agora", "qual", "quais", "suas", "seus", "dele", "dela", "voce", "ele", "ela", "nos",
+           "eles", "meu", "minha", "ainda", "quando", "todos", "tudo", "tambem", "muito", "produto",
+           "compra", "loja", "pedido", "empresa", "site", "aplicativo", "coisa", "fazer", "fez",
+           "vou", "vai", "veio", "ver", "gostei", "gostaria", "recomendo", "apenas", "excelente",
+           "otimo", "otima", "bom", "boa", "perfeito", "satisfeito", "obrigado", "obrigada"}
+_w = _w[~_w["词"].isin(STOP_PT)]
+nat_n = _w["order_id"].nunique()
+nat_word = _w.groupby("词")["order_id"].nunique().rename("全国提及订单数")
+_wc = _w.merge(oc, on="order_id", how="inner")
+_wc = _wc[_wc["品类"].isin(main_cats)]
+cat_n = bad_hit.groupby("品类")["order_id"].nunique()
+gw = _wc.groupby(["品类", "词"])["order_id"].nunique().rename("提及订单数").reset_index()
+gw["该品类差评文本订单数"] = gw["品类"].map(cat_n)
+gw = gw.merge(nat_word, on="词", how="left")
+gw["lift"] = ((gw["提及订单数"] / gw["该品类差评文本订单数"]) / (gw["全国提及订单数"] / nat_n)).round(2)
+gw["该品类提及率%"] = (gw["提及订单数"] / gw["该品类差评文本订单数"] * 100).round(1)
+gw["全国提及率%"] = (gw["全国提及订单数"] / nat_n * 100).round(1)
+gw = gw[gw["提及订单数"] >= 30].sort_values(["品类", "lift"], ascending=[True, False])
+gw = gw[["品类", "词", "提及订单数", "该品类差评文本订单数", "该品类提及率%", "全国提及率%", "lift"]]
+gw.to_csv(os.path.join(DATA_DIR, "品类差评特有词.csv"), index=False, encoding="utf-8-sig")
+
+n_samp = min(120, bad_hit["order_id"].nunique())
+samp = bad_hit.drop_duplicates("order_id")[["order_id", "品类"]].sample(n_samp, random_state=42)
+samp = samp.merge(rv[["order_id", "review_comment_message"]], on="order_id", how="left")
+samp = samp.merge(hit[["order_id"] + THEMES_EXT], on="order_id", how="left")
+samp["规则命中主题"] = samp[THEMES].apply(lambda r: "|".join([t for t in THEMES if r[t]]), axis=1)
+EXT_ONLY = list(KEYWORDS.keys()) + list(EXT.keys()) + ["履约类_扩展", "产品类_扩展"]
+samp["规则命中主题_扩展"] = samp[EXT_ONLY].apply(
+    lambda r: "|".join([t for t in EXT_ONLY if r[t]]), axis=1)
+samp["人工/AI复核主题"] = ""
+samp = samp[["order_id", "品类", "review_comment_message", "规则命中主题", "规则命中主题_扩展",
+             "人工/AI复核主题"]]
+samp_path = os.path.join(DATA_DIR, "文本标注抽检.csv")
+if os.path.exists(samp_path):
+    print("抽检样本表已存在：保留原表（含人工/AI 复核列），不覆盖")
+else:
+    samp.to_csv(samp_path, index=False, encoding="utf-8-sig")
+
+print()
+print("=== 模块⑪ 品类级产品痛点 ===")
+print(f"跨品类订单 {(multi_cat > 1).sum():,} 单（占 {(multi_cat > 1).mean() * 100:.2f}%），其评价同时计入涉及的每个品类")
+print(f"有文本的差评订单 {int((hit['是否差评'] == 1).sum()):,} 单 → 含品类归属 {len(bad_hit):,} 行")
+print()
+print(pain.to_string(index=False))
+print()
+bidx = hit["是否差评"] == 1
+b_old = float(hit.loc[bidx, "产品类"].mean() * 100); b_ext = float(hit.loc[bidx, "产品类_扩展"].mean() * 100)
+f_old = float(hit.loc[bidx, "履约类"].mean() * 100); f_ext = float(hit.loc[bidx, "履约类_扩展"].mean() * 100)
+print(f"平台层（有文本的差评订单 {int(bidx.sum()):,} 单）：产品类提及率 原词典 {b_old:.1f}% → 扩展词典 "
+      f"{b_ext:.1f}%（+{b_ext - b_old:.1f}pp）；履约类 {f_old:.1f}% → {f_ext:.1f}%（+{f_ext - f_old:.1f}pp）")
+print(f"产品类/履约类 比值：{b_old / f_old:.2f} → {b_ext / f_ext:.2f}")
+print()
+cmp = pain.dropna(subset=["产品类_扩展提及率%"]).sort_values("产品类_扩展提及率%", ascending=False)
+print("原词典 vs 扩展词典（产品类 / 履约类提及率 %）：")
+print(cmp[["品类", "差评文本订单数", "产品类提及率%", "产品类_扩展提及率%",
+           "履约类提及率%", "履约类_扩展提及率%", "产品类/履约类", "产品类/履约类_扩展"]].to_string(index=False))
+print()
+print("差评特有词（提及订单数 ≥30、lift 降序，每品类前 4）：")
+for _c in main_cats:
+    sub = gw[gw["品类"] == _c].head(4)
+    if len(sub):
+        print(f"  {_c}: " + " | ".join(
+            f"{r['词']}({r['提及订单数']}单 lift{r['lift']})" for _, r in sub.iterrows()))
+print()
+print("抽检样本表：文本标注抽检.csv（120 条，人工/AI 复核列见该表）")
+print("结果表已输出：品类产品痛点.csv、品类差评特有词.csv")
+
+# ---------------------------------------------------------------- 模块⑫ 主力价格带与结构分解
+# 口径：单价与到手价（单价 + 运费）都用商品行；州际均价差在"两州共同在售商品篮子"上分解为
+# 价格效应（同一批商品的价差）与结构效应（同一批商品的销量权重差），两项之和恒等于篮子内均价差
+pb = items[["order_id", "product_id", "price", "freight_value", "seller_id"]].merge(
+    products[["product_id", "product_category_name"]], on="product_id", how="left").merge(
+    orders_ok, on="order_id", how="inner")
+pb["品类"] = pb["product_category_name"].fillna("未分类")
+pb["到手价"] = pb["price"] + pb["freight_value"]
+pm = pb[pb["品类"].isin(main_cats) & pb["customer_state"].isin(top_states)].copy()
+
+band_rows = []
+for _c in main_cats:
+    s = pm[pm["品类"] == _c]
+    for _st in top_states:
+        x = s[s["customer_state"] == _st]
+        if len(x) < 100:
+            continue
+        q = x["price"].quantile([0.25, 0.5, 0.75])
+        qd = x["到手价"].quantile([0.25, 0.5, 0.75])
+        band_rows.append({"品类": _c, "州": _st, "件数": len(x),
+                          "单价P25": round(q[0.25], 1), "单价P50": round(q[0.5], 1), "单价P75": round(q[0.75], 1),
+                          "到手价P25": round(qd[0.25], 1), "到手价P50": round(qd[0.5], 1),
+                          "到手价P75": round(qd[0.75], 1), "件均运费": round(x["freight_value"].mean(), 2)})
+band = pd.DataFrame(band_rows)
+band.to_csv(os.path.join(DATA_DIR, "品类州价格带.csv"), index=False, encoding="utf-8-sig")
+
+dec_rows = []
+for _c in main_cats:
+    s = pm[pm["品类"] == _c]
+    sp = s[s["customer_state"] == "SP"]
+    a = sp.groupby("product_id").agg(n=("price", "size"), p=("price", "mean"))
+    for _st in [x for x in top_states if x != "SP"]:
+        sj = s[s["customer_state"] == _st]
+        b = sj.groupby("product_id").agg(n=("price", "size"), p=("price", "mean"))
+        jj = a.join(b, lsuffix="_基准", rsuffix="_州", how="inner")
+        if len(jj) == 0 or jj["n_基准"].sum() < 100 or jj["n_州"].sum() < 100:
+            continue
+        wb = jj["n_基准"] / jj["n_基准"].sum()
+        wj = jj["n_州"] / jj["n_州"].sum()
+        wm = (wb + wj) / 2
+        pmm = (jj["p_基准"] + jj["p_州"]) / 2
+        pe = float((wm * (jj["p_州"] - jj["p_基准"])).sum())
+        se = float((pmm * (wj - wb)).sum())
+        basket = float((wj * jj["p_州"]).sum() - (wb * jj["p_基准"]).sum())
+        dec_rows.append({
+            "品类": _c, "州": _st, "基准州": "SP",
+            "全样本单价差(州−SP)": float(sj["price"].mean() - sp["price"].mean()),
+            "篮子内单价差": basket, "价格效应": pe, "结构效应": se,
+            "篮子覆盖%_基准": jj["n_基准"].sum() / len(sp) * 100,
+            "篮子覆盖%_州": jj["n_州"].sum() / len(sj) * 100,
+            "件均运费差(州−SP)": float(sj["freight_value"].mean() - sp["freight_value"].mean()),
+            "到手价差(州−SP)": float(sj["到手价"].mean() - sp["到手价"].mean()),
+        })
+
+dec = pd.DataFrame(dec_rows)
+dec["结构效应占比%"] = (dec["结构效应"] / dec["篮子内单价差"] * 100)
+dec["分解校验差"] = dec["价格效应"] + dec["结构效应"] - dec["篮子内单价差"]
+dec["到手价校验差"] = dec["到手价差(州−SP)"] - (dec["全样本单价差(州−SP)"] + dec["件均运费差(州−SP)"])
+for _c2 in ["全样本单价差(州−SP)", "篮子内单价差", "价格效应", "结构效应",
+            "件均运费差(州−SP)", "到手价差(州−SP)", "结构效应占比%"]:
+    dec[_c2] = dec[_c2].round(2)
+dec["篮子覆盖%_基准"] = dec["篮子覆盖%_基准"].round(1)
+dec["篮子覆盖%_州"] = dec["篮子覆盖%_州"].round(1)
+dec["分解校验差"] = dec["分解校验差"].round(6)
+dec["到手价校验差"] = dec["到手价校验差"].round(6)
+dec = dec.sort_values(["品类", "州"]).reset_index(drop=True)
+dec.to_csv(os.path.join(DATA_DIR, "价格分解.csv"), index=False, encoding="utf-8-sig")
+
+sku = pb.groupby("product_id").agg(州数=("customer_state", "nunique"), 卖家数=("seller_id", "nunique"),
+                                   价种数=("price", "nunique"), 件数=("price", "size"))
+sku5 = sku[sku["州数"] >= 5]
+sku_sum = pd.DataFrame([
+    {"指标": "覆盖 ≥5 个州的 SKU 数", "值": len(sku5)},
+    {"指标": "价格只有单一取值的 SKU 占比%", "值": round((sku5["价种数"] == 1).mean() * 100, 1)},
+    {"指标": "价格取值种数 P50", "值": int(sku5["价种数"].median())},
+    {"指标": "价格取值种数 P90", "值": int(sku5["价种数"].quantile(0.9))},
+    {"指标": "多卖家 SKU 占比%", "值": round((sku5["卖家数"] >= 2).mean() * 100, 1)},
+    {"指标": "多卖家 SKU 价格种数 P50", "值": int(sku5[sku5["卖家数"] >= 2]["价种数"].median())},
+    {"指标": "单卖家 SKU 价格种数 P50", "值": int(sku5[sku5["卖家数"] == 1]["价种数"].median())},
+])
+sku_sum.to_csv(os.path.join(DATA_DIR, "同SKU跨州定价.csv"), index=False, encoding="utf-8-sig")
+
+print()
+print("=== 模块⑫ 主力价格带与结构分解 ===")
+print(f"价格样本：主力品类 × 前 8 州共 {len(pm):,} 件商品行（含运费）")
+print(sku_sum.to_string(index=False))
+print()
+print("|结构效应| 最大 8 组（结构效应为正 = 该州买的是更贵的款式，不是同款更贵）：")
+print(dec.reindex(dec["结构效应"].abs().sort_values(ascending=False).index).head(8)[
+    ["品类", "州", "全样本单价差(州−SP)", "价格效应", "结构效应", "结构效应占比%",
+     "件均运费差(州−SP)", "到手价差(州−SP)", "篮子覆盖%_州"]].to_string(index=False))
+print()
+print(f"分解校验：价格效应 + 结构效应 − 篮子内单价差 最大偏差 {dec['分解校验差'].abs().max():.2e} 元")
+print(f"到手价校验：到手价差 −（单价差 + 运费差）最大偏差 {dec['到手价校验差'].abs().max():.2e} 元")
+print(f"篮子覆盖率（州侧）中位数 {dec['篮子覆盖%_州'].median():.1f}%、最低 {dec['篮子覆盖%_州'].min():.1f}%")
+print()
+print("结果表已输出：品类州价格带.csv、价格分解.csv、同SKU跨州定价.csv")
