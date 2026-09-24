@@ -4,3 +4,13 @@ market/data/商品主表.csv
 __pycache__/
 *.pyc
 .DS_Store
+
+# 面试与个人材料，不进仓库
+安克GTM面试*
+artifacts/
+interview_img.png
+Word图片素材/
+md2docx.py
+pdd*.png
+s[0-9].png
+ref.png
