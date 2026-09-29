@@ -4,6 +4,10 @@
 > **一个数据集、一套方法论、两个分析方向**——物流侧回答"货怎么送到"，商品侧回答"货怎么卖"。
 > 工具链：Python (pandas / scikit-learn) · Power BI · SQL
 
+> **原始数据说明（首次运行前必读）**：本仓库不含原始数据（9 个 CSV 共约 121MB，其中地理坐标表 61MB，未随包分发）。请到 Kaggle 下载后放入 `data/raw/`，具体步骤见 [`data/raw/README.md`](data/raw/README.md)。
+> 下载地址：https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce
+> **只看结果无需下载**：`logistics/data/`、`market/data/` 的结果表与全部图表已随包提供，可直接查看；要复现分析过程才需要原始数据。
+
 ## 一、项目概览
 
 本项目从两个方向分析平台的经营表现：配送能否兑现承诺、商品能否卖对市场。同一份订单数据、同一套诊断方法。
